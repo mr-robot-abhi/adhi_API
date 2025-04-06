@@ -1,21 +1,22 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/auth.controller');
-const authMiddleware = require('../middleware/auth');
+const { validateLogin, validateRegister } = require('../utils/validation');
+const auth = require('../middleware/auth');
+const roles = require('../middleware/roles');
 
-// Register new user
-router.post('/register', authController.register);
+// Email/password authentication
+router.post('/login', validateLogin, authController.login);
+router.post('/register', validateRegister, authController.register);
 
-// Login user
-router.post('/login', authController.login);
+// Google authentication
+router.post('/google', authController.googleAuth);
 
-// Get current user
-router.get('/me', authMiddleware, authController.getMe);
+// Token verification
+router.get('/verify', auth.verify, authController.verifyToken);
 
-// Refresh token
+// Session management
+router.post('/logout', auth.verify, authController.logout);
 router.post('/refresh', authController.refreshToken);
-
-// Logout
-router.post('/logout', authMiddleware, authController.logout);
 
 module.exports = router;

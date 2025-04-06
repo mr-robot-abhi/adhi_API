@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const calendarController = require('../controllers/calendar.controller');
-const authMiddleware = require('../middleware/auth');
+const { verify: authMiddleware } = require('../middleware/auth');
 
 // Create calendar event
 router.post('/', authMiddleware, calendarController.createEvent);

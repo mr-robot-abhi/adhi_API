@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const documentController = require('../controllers/document.controller');
-const authMiddleware = require('../middleware/auth');
+const { verify: authMiddleware } = require('../middleware/auth');
 const uploadMiddleware = require('../middleware/upload');
 
 // Upload document
