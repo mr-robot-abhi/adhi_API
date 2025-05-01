@@ -1,24 +1,34 @@
+// server.js
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./config/db');
-const { admin } = require('./config/firebase');
+const logger = require('./utils/logger'); // Add this line
+
 const app = express();
 
-// Middleware
+// Basic middleware
 app.use(cors());
 app.use(express.json());
 
 // Database connections
 connectDB(); // MongoDB
-console.log('Firebase initialized:', !!admin); // Verify Firebase
+
+// Verify Firebase
+const { admin } = require('./config/firebase');
+logger.info(`Firebase initialized: ${admin ? '✅' : '❌'}`);
 
 // Routes
-const authRoutes = require('./routes/auth.routes');
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', require('./routes/auth.routes'));
 app.use('/api/cases', require('./routes/case.routes'));
 app.use('/api/documents', require('./routes/document.routes'));
-app.use('/api/calendar', require('./routes/calendar.routes'));
+app.use('/api/event', require('./routes/event.routes'));
+
+// Basic error handling middleware
+app.use((err, req, res, next) => {
+  logger.error(err.stack);
+  res.status(500).send('Something broke!');
+});
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => logger.info(`Server running on port ${PORT}`));

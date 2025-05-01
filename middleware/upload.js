@@ -1,27 +1,66 @@
+// middleware/upload.js
 const multer = require('multer');
 const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 
-// Set up storage engine
+// Configure storage
 const storage = multer.memoryStorage();
 
-// File filter
+// File validation
 const fileFilter = (req, file, cb) => {
-  const filetypes = /pdf|doc|docx|xls|xlsx|ppt|pptx|txt|jpg|jpeg|png/;
-  const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = filetypes.test(file.mimetype);
+  const allowedTypes = [
+    'application/pdf', // PDF
+    'application/msword', // DOC
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
+    'application/vnd.ms-excel', // XLS
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
+    'application/vnd.ms-powerpoint', // PPT
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation', // PPTX
+    'text/plain', // TXT
+    'image/jpeg', // JPEG
+    'image/png', // PNG
+    'image/gif' // GIF
+  ];
 
-  if (extname && mimetype) {
-    return cb(null, true);
+  if (allowedTypes.includes(file.mimetype)) {
+    cb(null, true);
   } else {
-    cb(new Error('Only document and image files are allowed!'));
+    cb(new Error('Invalid file type. Only document and image files are allowed'), false);
   }
 };
 
-// Initialize upload
+// Configure multer
 const upload = multer({
-  storage: storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
-  fileFilter: fileFilter
+  storage,
+  limits: {
+    fileSize: 25 * 1024 * 1024, // 25MB
+    files: 5 // Maximum 5 files
+  },
+  fileFilter
 });
 
-module.exports = upload;
+// Middleware for handling upload errors
+const handleUploadErrors = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ 
+        errors: [{ msg: 'File too large. Maximum 25MB allowed' }] 
+      });
+    }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      return res.status(400).json({ 
+        errors: [{ msg: 'Too many files. Maximum 5 files allowed' }] 
+      });
+    }
+  } else if (err) {
+    return res.status(400).json({ 
+      errors: [{ msg: err.message }] 
+    });
+  }
+  next();
+};
+
+module.exports = {
+  upload,
+  handleUploadErrors
+};

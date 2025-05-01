@@ -1,31 +1,65 @@
-exports.authorize = (...roles) => {
+// middleware/roles.js
+const Case = require('../models/case.model');
+const Document = require('../models/document.model');
+const Event = require('../models/event.model');
+
+// Higher-order function for role authorization
+exports.authorize = (...allowedRoles) => {
   return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
+    if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({
-        message: `User role ${req.user.role} is not authorized to access this route`
+        errors: [{ 
+          msg: `Role ${req.user.role} is not authorized to access this resource` 
+        }]
       });
     }
     next();
   };
 };
 
+// Resource ownership checker
 exports.checkOwnership = (model) => {
   return async (req, res, next) => {
-    let resource = await model.findById(req.params.id);
-    
-    if (!resource) {
-      return res.status(404).json({
-        message: 'Resource not found'
-      });
-    }
+    try {
+      const resource = await model.findById(req.params.id);
+      
+      if (!resource) {
+        return res.status(404).json({
+          errors: [{ msg: 'Resource not found' }]
+        });
+      }
 
-    // Check if user is admin or the creator of the resource
-    if (req.user.role !== 'admin' && resource.createdBy.toString() !== req.user.id) {
-      return res.status(403).json({
-        message: 'Not authorized to modify this resource'
-      });
-    }
+      // Check ownership based on model type
+      let isOwner = false;
+      
+      if (model.modelName === 'Case') {
+        isOwner = resource.user.equals(req.user._id) || 
+                 resource.lawyers.includes(req.user._id);
+      } 
+      else if (model.modelName === 'Document') {
+        isOwner = resource.owner.equals(req.user._id) ||
+                 resource.accessibleTo.some(a => a.user.equals(req.user._id));
+      }
+      else if (model.modelName === 'Event') {
+        isOwner = resource.createdBy.equals(req.user._id) ||
+                 resource.participants.some(p => p.user.equals(req.user._id));
+      }
+      else {
+        // Default ownership check
+        isOwner = resource.user.equals(req.user._id);
+      }
 
-    next();
+      if (!isOwner && req.user.role !== 'admin') {
+        return res.status(403).json({
+          errors: [{ msg: 'Not authorized to access this resource' }]
+        });
+      }
+
+      req.resource = resource;
+      next();
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).json({ errors: [{ msg: 'Server error' }] });
+    }
   };
 };
