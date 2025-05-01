@@ -10,15 +10,16 @@ const CaseSchema = new mongoose.Schema({
   },
   description: {
     type: String,
-    required: [true, 'Please add a description']
+    required: false, // Made optional
+    default: 'No description provided'
   },
 
   // Legal Identification
   caseNumber: {
     type: String,
-    unique: true,
     required: [true, 'Case number is required'],
-    match: [/^[A-Z0-9\-_]+$/, 'Invalid case number format']
+    match: [/^[A-Z0-9\-_]+$/, 'Invalid case number format'],
+    index: true
   },
   caseType: {
     type: String,
@@ -30,26 +31,40 @@ const CaseSchema = new mongoose.Schema({
   courtState: {
     type: String,
     default: 'karnataka',
-    enum: ['karnataka', 'maharashtra', 'delhi'] // Add more as needed
+    enum: ['karnataka', 'maharashtra', 'delhi']
   },
   district: {
     type: String,
     default: 'bengaluru_urban',
-    enum: ['bengaluru_urban', 'bengaluru_rural'] // Add more districts
+    enum: ['bengaluru_urban', 'bengaluru_rural']
   },
   courtType: {
     type: String,
-    enum: ['high_court', 'district_court', 'supreme_court', 'tribunal']
+    enum: ['high_court', 'district_court', 'supreme_court', 'tribunal'],
+    default: 'district_court'
   },
-  court: { type: String },
-  bench: { type: String },
-  courtHall: { type: String },
-  courtComplex: { type: String },
+  court: { 
+    type: String,
+    default: 'Bangalore Urban District Court'
+  },
+  bench: { 
+    type: String,
+    default: ''
+  },
+  courtHall: { 
+    type: String,
+    default: '1'
+  },
+  courtComplex: { 
+    type: String,
+    default: 'City Civil Court Complex'
+  },
 
   // Case Timeline
   filingDate: {
     type: Date,
     required: true,
+    default: Date.now,
     validate: {
       validator: function(v) {
         return v <= new Date();
@@ -57,8 +72,14 @@ const CaseSchema = new mongoose.Schema({
       message: 'Filing date cannot be in the future'
     }
   },
-  hearingDate: { type: Date },
-  nextHearingDate: { type: Date },
+  hearingDate: { 
+    type: Date,
+    default: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // Default 1 week from now
+  },
+  nextHearingDate: { 
+    type: Date,
+    required: false
+  },
 
   // Parties Information
   petitionerRole: {
@@ -74,50 +95,66 @@ const CaseSchema = new mongoose.Schema({
   petitionerNames: [{
     type: String,
     required: true,
-    minlength: [3, 'Name too short']
+    minlength: [3, 'Name too short'],
+    default: ['Anonymous Petitioner']
   }],
-  opposingRole: {
-    type: String,
-    default: 'defendant',
-    enum: ['defendant', 'respondent', 'accused']
-  },
   opposingPartyNames: [{
     type: String,
-    required: true,
-    minlength: [3, 'Name too short']
+    required: false,
+    minlength: [3, 'Name too short'],
+    default: []
   }],
-  opposingCounsel: { type: String },
+  opposingCounsel: { 
+    type: String,
+    required: false
+  },
 
   // Case Management
   status: {
     type: String,
     default: 'active',
-    enum: ['draft', 'active', 'inactive', 'closed', 'archived']
+    enum: ['draft', 'active', 'inactive', 'closed', 'archived'],
+    index: true
   },
   priority: {
     type: String,
     default: 'normal',
     enum: ['low', 'normal', 'high', 'urgent']
   },
-  isUrgent: { type: Boolean, default: false },
+  isUrgent: { 
+    type: Boolean, 
+    default: false 
+  },
   caseStage: {
     type: String,
     default: 'filing',
     enum: ['filing', 'evidence', 'arguments', 'judgment', 'execution', 'appeal']
   },
-  actSections: { type: String },
-  reliefSought: { type: String },
-  notes: { type: String },
+  actSections: { 
+    type: String,
+    required: false
+  },
+  reliefSought: { 
+    type: String,
+    required: false
+  },
+  notes: { 
+    type: String,
+    required: false
+  },
 
   // Relationships
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: true,
+    index: true
   },
   client: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+    ref: 'User',
+    required: false,
+    index: true
   },
   lawyers: [{
     type: mongoose.Schema.Types.ObjectId,
@@ -138,7 +175,8 @@ const CaseSchema = new mongoose.Schema({
   closedAt: { type: Date }
 }, {
   toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+  toObject: { virtuals: true },
+  timestamps: true
 });
 
 // Virtual for hearing count
@@ -146,48 +184,70 @@ CaseSchema.virtual('hearingCount').get(function() {
   return this.events?.filter(e => e.type === 'hearing').length || 0;
 });
 
-// Update timestamp before saving
+// Auto-generate case number if not provided
 CaseSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
-  
-  // Auto-generate case number if not provided
   if (!this.caseNumber) {
-    this.caseNumber = `${this.courtType?.substr(0, 3) || 'GEN'}-${Date.now().toString().slice(-6)}`;
+    const prefix = this.courtType ? this.courtType.substring(0, 3).toUpperCase() : 'GEN';
+    this.caseNumber = `${prefix}-${Date.now().toString().slice(-6)}`;
   }
-  
   next();
 });
 
 // Cascade deletes
-CaseSchema.pre('remove', async function(next) {
-  await this.model('Document').deleteMany({ case: this._id });
-  await this.model('Event').deleteMany({ case: this._id });
-  await this.model('Task').deleteMany({ case: this._id });
-  next();
+CaseSchema.pre('deleteOne', { document: true, query: false }, async function(next) {
+  try {
+    await mongoose.model('Document').deleteMany({ case: this._id });
+    await mongoose.model('Event').deleteMany({ case: this._id });
+    await mongoose.model('Task').deleteMany({ case: this._id });
+    next();
+  } catch (err) {
+    next(err);
+  }
 });
 
-// Indexes for faster queries
-CaseSchema.index({ caseNumber: 1 });
-CaseSchema.index({ status: 1 });
-CaseSchema.index({ hearingDate: 1 });
-CaseSchema.index({ user: 1 });
-CaseSchema.index({ client: 1 });
+// Compound indexes for better query performance
+CaseSchema.index({ 
+  status: 1,
+  hearingDate: 1 
+});
+CaseSchema.index({
+  user: 1,
+  isUrgent: 1 
+});
 
 // Static method for case statistics
 CaseSchema.statics.getStats = async function(userId) {
   const stats = await this.aggregate([
-    { $match: { user: userId } },
-    { $group: {
-      _id: '$status',
-      count: { $sum: 1 },
-      urgent: { $sum: { $cond: [{ $eq: ['$isUrgent', true] }, 1, 0] } }
-    }}
+    { $match: { user: mongoose.Types.ObjectId(userId) } },
+    { 
+      $group: {
+        _id: '$status',
+        count: { $sum: 1 },
+        urgent: { 
+          $sum: { 
+            $cond: [{ $eq: ['$isUrgent', true] }, 1, 0] 
+          } 
+        }
+      }
+    }
   ]);
   
   return stats.reduce((acc, curr) => {
-    acc[curr._id] = { total: curr.count, urgent: curr.urgent };
+    acc[curr._id] = { 
+      total: curr.count, 
+      urgent: curr.urgent 
+    };
     return acc;
   }, {});
 };
+
+// Text index for search functionality
+CaseSchema.index({
+  title: 'text',
+  description: 'text',
+  caseNumber: 'text',
+  petitionerNames: 'text',
+  opposingPartyNames: 'text'
+});
 
 module.exports = mongoose.model('Case', CaseSchema);

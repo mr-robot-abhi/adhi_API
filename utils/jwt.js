@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const logger = require('./logger');
 const { v4: uuidv4 } = require('uuid');
 
+// Generate JWT access token
 const generateAccessToken = (user) => {
   return jwt.sign(
     {
@@ -17,6 +18,7 @@ const generateAccessToken = (user) => {
   );
 };
 
+// Generate JWT refresh token
 const generateRefreshToken = (user) => {
   return jwt.sign(
     {
@@ -31,6 +33,15 @@ const generateRefreshToken = (user) => {
   );
 };
 
+// Generate both access and refresh tokens
+const generateTokens = (user) => {
+  return {
+    accessToken: generateAccessToken(user),
+    refreshToken: generateRefreshToken(user)
+  };
+};
+
+// Verify JWT token (either access or refresh)
 const verifyToken = (token, secret) => {
   try {
     return jwt.verify(token, secret, { issuer: 'adhi-api' });
@@ -40,6 +51,7 @@ const verifyToken = (token, secret) => {
   }
 };
 
+// Decode JWT token without verification (useful for extracting payload)
 const decodeToken = (token) => {
   try {
     return jwt.decode(token, { complete: true });
@@ -49,11 +61,13 @@ const decodeToken = (token) => {
   }
 };
 
-const generateTokens = (user) => {
-  return {
-    accessToken: generateAccessToken(user),
-    refreshToken: generateRefreshToken(user)
-  };
+// Generate JWT token (for older style token generation)
+const generateToken = (userId) => {
+  return jwt.sign(
+    { id: userId },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRE || '30d' }
+  );
 };
 
 module.exports = {
@@ -61,5 +75,6 @@ module.exports = {
   generateRefreshToken,
   generateTokens,
   verifyToken,
-  decodeToken
+  decodeToken,
+  generateToken
 };

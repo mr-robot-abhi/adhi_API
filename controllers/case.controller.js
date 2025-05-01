@@ -1,70 +1,388 @@
 const Case = require('../models/case.model');
+const AppError = require('../utils/appError');
+const logger = require('../utils/logger');
 
-exports.createCase = async (req, res) => {
+/**
+ * @desc    Get all cases or filtered cases
+ * @route   GET /api/cases
+ * @access  Private
+ */
+exports.getCases = async (req, res, next) => {
   try {
-    const { title, description, status, client } = req.body;
-    const createdBy = req.user.id;
+    const { search, status, type, district, date } = req.query;
+    const filter = {};
 
-    const newCase = new Case({
-      title,
-      description,
-      status,
-      client,
-      createdBy
+    if (req.user.role === 'client') {
+      filter.client = req.user.id;
+    } else if (req.user.role === 'lawyer') {
+      filter.lawyer = req.user.id;
+    }
+
+    if (search) {
+      filter.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { caseNumber: { $regex: search, $options: 'i' } },
+        { court: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    if (status) filter.status = status;
+    if (type) filter.caseType = type;
+    if (district) filter.district = district;
+
+    if (date) {
+      const today = new Date();
+      const startOfToday = new Date(today.setHours(0, 0, 0, 0));
+      if (date === 'today') {
+        filter.filingDate = { $gte: startOfToday, $lt: new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000) };
+      } else if (date === 'week') {
+        filter.filingDate = { $gte: new Date(startOfToday.getTime() - 7 * 24 * 60 * 60 * 1000) };
+      } else if (date === 'month') {
+        filter.filingDate = { $gte: new Date(startOfToday.getTime() - 30 * 24 * 60 * 60 * 1000) };
+      }
+    }
+
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip = (page - 1) * limit;
+
+    const cases = await Case.find(filter)
+      .populate('lawyer', 'name email')
+      .populate('client', 'name email')
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Case.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      count: cases.length,
+      total,
+      pagination: {
+        page,
+        limit,
+        pages: Math.ceil(total / limit),
+      },
+      data: cases,
+    });
+  } catch (error) {
+    logger.error(`Error getting cases: ${error.message}`);
+    next(error);
+  }
+};
+
+/**
+ * @desc    Get single case by ID
+ * @route   GET /api/cases/:id
+ * @access  Private
+ */
+exports.getCase = async (req, res, next) => {
+  try {
+    const caseId = req.params.id;
+    const caseItem = await Case.findById(caseId)
+      .populate('lawyer', 'name email')
+      .populate('client', 'name email')
+      .populate('documents')
+      .populate('events');
+
+    if (!caseItem) {
+      return next(new AppError('Case not found', 404));
+    }
+
+    if (
+      (req.user.role === 'client' && caseItem.client.toString() !== req.user.id.toString()) ||
+      (req.user.role === 'lawyer' && caseItem.lawyer.toString() !== req.user.id.toString())
+    ) {
+      return next(new AppError('Not authorized to access this case', 403));
+    }
+
+    res.status(200).json({
+      success: true,
+      data: caseItem,
+    });
+  } catch (error) {
+    logger.error(`Error getting case: ${error.message}`);
+    next(error);
+  }
+};
+
+/**
+ * @desc    Create new case
+ * @route   POST /api/cases
+ * @access  Private (Lawyers and Admins only)
+ */
+exports.createCase = async (req, res, next) => {
+  try {
+    if (req.user.role === 'client') {
+      return next(new AppError('Not authorized to create cases', 403));
+    }
+
+    const caseData = {
+      ...req.body,
+      lawyer: req.user.id,
+    };
+
+    const newCase = await Case.create(caseData);
+    logger.info(`New case created: ${newCase.title} (ID: ${newCase._id})`);
+
+    res.status(201).json({
+      success: true,
+      data: newCase,
+    });
+  } catch (error) {
+    logger.error(`Error creating case: ${error.message}`);
+    next(error);
+  }
+};
+
+/**
+ * @desc    Update case
+ * @route   PUT /api/cases/:id
+ * @access  Private (Lawyers and Admins only)
+ */
+exports.updateCase = async (req, res, next) => {
+  try {
+    const caseId = req.params.id;
+    const caseToUpdate = await Case.findById(caseId);
+
+    if (!caseToUpdate) {
+      return next(new AppError('Case not found', 404));
+    }
+
+    if (
+      (req.user.role === 'lawyer' && caseToUpdate.lawyer.toString() !== req.user.id.toString()) ||
+      req.user.role === 'client'
+    ) {
+      return next(new AppError('Not authorized to update this case', 403));
+    }
+
+    const updatedCase = await Case.findByIdAndUpdate(caseId, req.body, {
+      new: true,
+      runValidators: true,
     });
 
-    await newCase.save();
-    res.status(201).json(newCase);
+    logger.info(`Case updated: ${updatedCase.title} (ID: ${updatedCase._id})`);
+
+    res.status(200).json({
+      success: true,
+      data: updatedCase,
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    logger.error(`Error updating case: ${error.message}`);
+    next(error);
   }
 };
 
-exports.getAllCases = async (req, res) => {
+/**
+ * @desc    Delete case
+ * @route   DELETE /api/cases/:id
+ * @access  Private (Admins only)
+ */
+exports.deleteCase = async (req, res, next) => {
   try {
-    const cases = await Case.find()
-      .populate('createdBy', 'email')
-      .populate('client', 'name email');
-    res.json(cases);
+    if (req.user.role !== 'admin') {
+      return next(new AppError('Only admins can delete cases', 403));
+    }
+
+    const caseId = req.params.id;
+    const caseToDelete = await Case.findById(caseId);
+
+    if (!caseToDelete) {
+      return next(new AppError('Case not found', 404));
+    }
+
+    await Case.findByIdAndDelete(caseId);
+    logger.info(`Case deleted: ${caseToDelete.title} (ID: ${caseId})`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Case deleted successfully',
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    logger.error(`Error deleting case: ${error.message}`);
+    next(error);
   }
 };
 
-exports.getCase = async (req, res) => {
+/**
+ * @desc    Add client to case
+ * @route   POST /api/cases/:id/clients
+ * @access  Private (Lawyers and Admins only)
+ */
+exports.addClientToCase = async (req, res, next) => {
   try {
-    const caseData = await Case.findById(req.params.id)
-      .populate('createdBy', 'email')
-      .populate('client', 'name email');
+    const { id } = req.params;
+    const { clientId } = req.body;
+
+    if (req.user.role === 'client') {
+      return next(new AppError('Not authorized to modify cases', 403));
+    }
+
+    const caseItem = await Case.findById(id);
+    if (!caseItem) {
+      return next(new AppError('Case not found', 404));
+    }
+
+    if (req.user.role === 'lawyer' && caseItem.lawyer.toString() !== req.user.id.toString()) {
+      return next(new AppError('Not authorized to modify this case', 403));
+    }
+
+    caseItem.client = clientId;
+    await caseItem.save();
+
+    logger.info(`Client added to case: Case ID ${id}, Client ID ${clientId}`);
+
+    res.status(200).json({
+      success: true,
+      data: caseItem,
+    });
+  } catch (error) {
+    logger.error(`Error adding client to case: ${error.message}`);
+    next(error);
+  }
+};
+
+/**
+ * @desc    Get case statistics
+ * @route   GET /api/cases/stats
+ * @access  Private
+ */
+exports.getCaseStats = async (req, res, next) => {
+  try {
+    const filter = req.user.role === 'lawyer' ? { lawyer: req.user.id } : req.user.role === 'client' ? { client: req.user.id } : {};
+
+    const totalCases = await Case.countDocuments(filter);
+    const activeCases = await Case.countDocuments({ ...filter, status: 'active' });
+    const urgentCases = await Case.countDocuments({ ...filter, isUrgent: true });
+    const casesByType = await Case.aggregate([
+      { $match: filter },
+      { $group: { _id: '$caseType', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+    const casesByStatus = await Case.aggregate([
+      { $match: filter },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    const closedCases = await Case.countDocuments({ ...filter, status: 'closed' });
+    const successfulCases = await Case.countDocuments({ ...filter, outcome: 'successful' });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalCases,
+        activeCases,
+        urgentCases,
+        casesByType,
+        casesByStatus,
+        closedCases,
+        successfulCases,
+      },
+    });
+  } catch (error) {
+    logger.error(`Error getting case stats: ${error.message}`);
+    next(error);
+  }
+};
+/**
+ * @desc    Get recent cases
+ * @route   GET /api/cases/recent
+ * @access  Private
+ */
+exports.getRecentCases = async (req, res, next) => {
+  try {
+    // Build filter based on user role
+    const filter = {};
     
-    if (!caseData) {
-      return res.status(404).json({ message: 'Case not found' });
+    if (req.user.role === 'lawyer') {
+      filter.lawyer = req.user.id;
+    } else if (req.user.role === 'client') {
+      filter.client = req.user.id;
     }
     
-    res.json(caseData);
+    // Get recent cases
+    const recentCases = await Case.find(filter)
+      .sort({ updatedAt: -1 })
+      .limit(5)
+      .populate('lawyer', 'name email')
+      .populate('client', 'name email');
+    
+    res.status(200).json({
+      success: true,
+      count: recentCases.length,
+      data: recentCases
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    logger.error(`Error getting recent cases: ${error.message}`);
+    next(error);
   }
 };
 
-exports.updateCase = async (req, res) => {
+/**
+ * @desc    Get case timeline
+ * @route   GET /api/cases/:id/timeline
+ * @access  Private
+ */
+exports.getCaseTimeline = async (req, res, next) => {
   try {
-    const updatedCase = await Case.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true }
-    );
-    res.json(updatedCase);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
+    const { id } = req.params;
+    
+    const caseItem = await Case.findById(id);
+    
+    if (!caseItem) {
+      return next(new AppError('Case not found', 404));
+    }
+    
+    // Check if user has permission to view this case
+    if (
+      req.user.role === 'client' && 
+      caseItem.client.toString() !== req.user.id.toString()
+    ) {
+      return next(new AppError('Not authorized to access this case', 403));
+    }
 
-exports.deleteCase = async (req, res) => {
-  try {
-    await Case.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Case deleted successfully' });
+    if (
+      req.user.role === 'lawyer' && 
+      caseItem.lawyer.toString() !== req.user.id.toString()
+    ) {
+      return next(new AppError('Not authorized to access this case', 403));
+    }
+    
+    // Get timeline events (from case history, events, documents, etc.)
+    // Note: This is a simplified version, you would normally combine multiple collections
+    const timeline = await Case.aggregate([
+      { $match: { _id: caseItem._id } },
+      { $project: {
+          _id: 0,
+          events: [
+            { 
+              type: 'created',
+              title: 'Case Created',
+              description: 'Case was filed in the system',
+              date: '$createdAt'
+            },
+            {
+              type: 'updated',
+              title: 'Case Updated',
+              description: 'Case details were modified',
+              date: '$updatedAt'
+            }
+          ]
+        }
+      },
+      { $unwind: '$events' },
+      { $sort: { 'events.date': -1 } }
+    ]);
+    
+    res.status(200).json({
+      success: true,
+      count: timeline.length,
+      data: timeline
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    logger.error(`Error getting case timeline: ${error.message}`);
+    next(error);
   }
 };
