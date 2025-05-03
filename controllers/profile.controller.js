@@ -1,4 +1,4 @@
-const User = require('../models/user.model');
+const User = require('../models/profile.model');
 const AppError = require('../utils/appError');
 const logger = require('../utils/logger');
 const bcrypt = require('bcryptjs');

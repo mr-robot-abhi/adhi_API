@@ -4,21 +4,17 @@ const authController = require('../controllers/auth.controller');
 const { protect } = require('../middleware/auth');
 
 // Public routes
-router.post('/signup', authController.register); // Changed from signup to register to match controller
+router.post('/signup', authController.register);
 router.post('/login', authController.login);
 router.post('/google', authController.googleLogin);
 router.post('/forgot-password', authController.forgotPassword);
-router.post('/reset-password/:oobCode', authController.resetPassword); // The param should match 'oobCode' as per your controller
-// router.post('/google', authController.googleLogin); // Commented out as googleLogin not implemented
+router.post('/reset-password/:oobCode', authController.resetPassword);
 
 // Protected routes
-router.use(protect); // Ensure all below routes are protected by the 'protect' middleware
-
-router.get('/me', authController.getMe); // Changed from getUserProfile to getMe to match controller
+router.use(protect);
+router.get('/me', authController.getMe);
 router.post('/logout', authController.logout);
-router.post('/change-password', authController.changePassword); // Exists in controller
-
-// Verify token route for checking token validity
-router.post('/verify', authController.verifyToken); // Matches controller
+router.post('/change-password', authController.changePassword);
+router.post('/verify', authController.verifyToken);
 
 module.exports = router;

@@ -1,73 +1,60 @@
 const User = require('../models/user.model');
+const Profile = require('../models/profile.model');
 const { generateToken, verifyToken } = require('../utils/jwt');
 const AppError = require('../utils/appError');
 const logger = require('../utils/logger');
 const bcrypt = require('bcryptjs');
 const admin = require('firebase-admin');
 
-// Initialize Firebase Admin SDK once (do this in a separate config file or here)
+// Firebase Admin SDK init (recommended to move to its own module)
 if (!admin.apps.length) {
   admin.initializeApp({
-    credential: admin.credential.applicationDefault(), // or use service account key
+    credential: admin.credential.applicationDefault(),
   });
 }
 
 /**
  * @desc    Google login
- * @route   POST /api/auth/google
- * @access  Public
  */
 exports.googleLogin = async (req, res, next) => {
   try {
     const { idToken } = req.body;
-    if (!idToken) {
-      return next(new AppError('No ID token provided', 400));
-    }
+    if (!idToken) return next(new AppError('No ID token provided', 400));
 
-    // Verify ID token with Firebase Admin
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     const { uid, email, name, picture } = decodedToken;
 
-    // Find user by firebaseUID or email
-    let user = await User.findOne({ firebaseUID: uid });
-    if (!user) {
-      user = await User.findOne({ email });
-    }
+    let user = await User.findOne({ firebaseUID: uid }) || await User.findOne({ email });
 
-    // If user does not exist, create new user with role 'client' by default
     if (!user) {
       user = await User.create({
         name: name || 'Google User',
         email,
-        password: Math.random().toString(36).slice(-8), // random password, not used
+        password: Math.random().toString(36).slice(-8),
         firebaseUID: uid,
         role: 'client',
-        profileImage: picture || undefined,
         isEmailVerified: true,
       });
+
+      await Profile.create({
+        user: user._id,
+        profileImage: picture || undefined,
+      });
     } else if (!user.firebaseUID) {
-      // Link firebaseUID if missing
       user.firebaseUID = uid;
       await user.save();
     }
 
-    // Generate JWT token
     const token = user.generateAuthToken();
 
-    // Return user data without password
     const userData = {
       id: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
-      profileImage: user.profileImage,
     };
 
-    res.status(200).json({
-      success: true,
-      token,
-      user: userData,
-    });
+    res.status(200).json({ success: true, token, user: userData });
   } catch (error) {
     next(error);
   }
@@ -75,42 +62,32 @@ exports.googleLogin = async (req, res, next) => {
 
 /**
  * @desc    Register new user
- * @route   POST /api/auth/register
- * @access  Public
  */
 exports.register = async (req, res, next) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, phone, address, bio } = req.body;
 
-    // Check if user already exists
     const userExists = await User.findOne({ email });
-    if (userExists) {
-      return next(new AppError('User already exists with this email', 400));
-    }
+    if (userExists) return next(new AppError('User already exists with this email', 400));
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user
     const user = await User.create({
       name,
       email,
       password: hashedPassword,
-      role: role || 'lawyer', // Default role is lawyer
+      role: role || 'lawyer',
     });
 
-    // Create user profile
-    await UserProfile.create({
-      userId: user._id,
-      name,
-      email,
+    await Profile.create({
+      user: user._id,
+      phone,
+      address,
+      bio,
     });
 
-    // Generate JWT token
     const token = generateToken(user._id);
 
-    // Return user data without password
     const userData = {
       id: user._id,
       name: user.name,
@@ -119,17 +96,13 @@ exports.register = async (req, res, next) => {
     };
 
     logger.info(`New user registered: ${email}`);
-
-    res.status(201).json({
-      success: true,
-      token,
-      user: userData,
-    });
+    res.status(201).json({ success: true, token, user: userData });
   } catch (error) {
     logger.error(`Registration error: ${error.message}`);
     next(error);
   }
 };
+
 
 /**
  * @desc    Login user
