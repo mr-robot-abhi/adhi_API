@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const path = require('path');
 
 const DocumentSchema = new mongoose.Schema({
-  // File Identification
+  // ========== File Identification ==========
   name: {
     type: String,
     required: [true, 'Document name is required'],
@@ -18,18 +18,18 @@ const DocumentSchema = new mongoose.Schema({
     maxlength: [500, 'Description cannot exceed 500 characters']
   },
 
-  // File Technical Details
+  // ========== File Metadata ==========
   type: {
     type: String,
     required: true,
     enum: [
-      'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 
+      'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
       'txt', 'jpg', 'jpeg', 'png', 'gif', 'csv', 'zip', 'rar'
     ]
   },
   mimeType: {
     type: String,
-    required: true
+    required: [true, 'MIME type is required']
   },
   size: {
     type: Number,
@@ -42,17 +42,17 @@ const DocumentSchema = new mongoose.Schema({
   },
   storagePath: {
     type: String,
-    required: true
+    required: [true, 'Storage path is required']
   },
   thumbnailPath: {
     type: String
   },
 
-  // Document Metadata
+  // ========== Document Metadata ==========
   category: {
     type: String,
     enum: [
-      'pleading', 'affidavit', 'evidence', 'contract', 
+      'pleading', 'affidavit', 'evidence', 'contract',
       'judgment', 'order', 'notice', 'memo', 'report'
     ]
   },
@@ -62,19 +62,20 @@ const DocumentSchema = new mongoose.Schema({
   }],
   status: {
     type: String,
-    default: 'active',
-    enum: ['draft', 'active', 'archived', 'deleted']
+    enum: ['draft', 'active', 'archived', 'deleted'],
+    default: 'active'
   },
   version: {
     type: Number,
-    default: 1
+    default: 1,
+    min: 1
   },
   isConfidential: {
     type: Boolean,
     default: false
   },
 
-  // Relationships
+  // ========== Ownership & Permissions ==========
   case: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Case',
@@ -110,7 +111,18 @@ const DocumentSchema = new mongoose.Schema({
     }
   }],
 
-  // System Fields
+  // ========== Auditing ==========
+  modifiedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  accessLogs: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    action: { type: String, enum: ['view', 'download', 'edit'] },
+    timestamp: { type: Date, default: Date.now }
+  }],
+
+  // ========== Timestamps ==========
   createdAt: {
     type: Date,
     default: Date.now
@@ -123,46 +135,69 @@ const DocumentSchema = new mongoose.Schema({
     type: Date
   }
 }, {
+  timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
 
-// Virtual for download URL
-DocumentSchema.virtual('downloadUrl').get(function() {
+// ========== Virtuals ==========
+DocumentSchema.virtual('downloadUrl').get(function () {
   return `/api/v1/documents/${this._id}/download`;
 });
 
-// Virtual for thumbnail URL
-DocumentSchema.virtual('thumbnailUrl').get(function() {
+DocumentSchema.virtual('thumbnailUrl').get(function () {
   return this.thumbnailPath ? `/api/v1/documents/${this._id}/thumbnail` : null;
 });
 
-// Set extension before save
-DocumentSchema.pre('save', function(next) {
-  this.extension = path.extname(this.originalName).toLowerCase().substring(1);
+// ========== Hooks ==========
+DocumentSchema.pre('save', function (next) {
+  if (this.originalName) {
+    this.extension = path.extname(this.originalName).toLowerCase().replace('.', '');
+  }
   this.updatedAt = Date.now();
   next();
 });
 
-// Soft delete method
-DocumentSchema.methods.softDelete = async function() {
+// ========== Instance Methods ==========
+DocumentSchema.methods.softDelete = async function () {
   this.status = 'deleted';
   this.deletedAt = Date.now();
   await this.save();
 };
 
-// Permission check method
-DocumentSchema.methods.hasAccess = function(userId, requiredPermission = 'view') {
+DocumentSchema.methods.hasAccess = function (userId, requiredPermission = 'view') {
   if (this.owner.equals(userId)) return true;
-  
+
   const access = this.accessibleTo.find(a => a.user.equals(userId));
   if (!access) return false;
-  
+
   const permissionLevels = { view: 1, download: 2, edit: 3 };
   return permissionLevels[access.permission] >= permissionLevels[requiredPermission];
 };
 
-// Indexes
+// ========== Static Methods ==========
+DocumentSchema.statics.getStatsByCase = async function (caseId) {
+  return this.aggregate([
+    { $match: { case: caseId, status: { $ne: 'deleted' } } },
+    {
+      $group: {
+        _id: '$category',
+        count: { $sum: 1 },
+        totalSize: { $sum: '$size' }
+      }
+    },
+    {
+      $project: {
+        category: '$_id',
+        count: 1,
+        totalSize: 1,
+        _id: 0
+      }
+    }
+  ]);
+};
+
+// ========== Indexes ==========
 DocumentSchema.index({ name: 'text', description: 'text', tags: 'text' });
 DocumentSchema.index({ case: 1 });
 DocumentSchema.index({ uploadedBy: 1 });
@@ -170,23 +205,5 @@ DocumentSchema.index({ owner: 1 });
 DocumentSchema.index({ status: 1 });
 DocumentSchema.index({ createdAt: -1 });
 DocumentSchema.index({ isConfidential: 1 });
-
-// Static method for document stats
-DocumentSchema.statics.getStatsByCase = async function(caseId) {
-  return this.aggregate([
-    { $match: { case: caseId, status: { $ne: 'deleted' } } },
-    { $group: {
-      _id: '$category',
-      count: { $sum: 1 },
-      totalSize: { $sum: '$size' }
-    }},
-    { $project: {
-      category: '$_id',
-      count: 1,
-      totalSize: 1,
-      _id: 0
-    }}
-  ]);
-};
 
 module.exports = mongoose.model('Document', DocumentSchema);
