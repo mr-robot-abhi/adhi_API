@@ -202,6 +202,7 @@ exports.logout = (req, res) => {
  * @route   GET /api/auth/verify
  * @access  Public
  */
+// In auth.controller.js, ensure the verifyToken function uses GET
 exports.verifyToken = async (req, res, next) => {
   try {
     // Extract token from Authorization header

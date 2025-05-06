@@ -15,6 +15,6 @@ router.use(protect);
 router.get('/me', authController.getMe);
 router.post('/logout', authController.logout);
 router.post('/change-password', authController.changePassword);
-router.post('/verify', authController.verifyToken);
+router.get('/verify', authController.verifyToken);
 
 module.exports = router;

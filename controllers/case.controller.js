@@ -117,9 +117,9 @@ exports.getCase = async (req, res, next) => {
  */
 exports.createCase = async (req, res, next) => {
   try {
-    if (req.user.role === "client") {
+    /*if (req.user.role === "client") {
       return next(new AppError("Not authorized to create cases", 403))
-    }
+    }*/
 
     const caseData = {
       ...req.body,
