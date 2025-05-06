@@ -13,21 +13,34 @@ dotenv.config();
 const app = express();
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => logger.info('MongoDB connected'))
-.catch(err => {
-  logger.error(`MongoDB connection error: ${err.message}`);
-  process.exit(1);
-});
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => logger.info('MongoDB connected'))
+  .catch(err => {
+    logger.error(`MongoDB connection error: ${err.message}`);
+    process.exit(1);
+  });
+
+// CORS configuration
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'https://adhivakta.netlify.app',
+  'http://localhost:3000',
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, origin || '*');
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 
 // Middleware
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'https://adhivakta.netlify.app/',
-  credentials: true
-}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -47,7 +60,7 @@ app.use((err, req, res, next) => {
   res.status(statusCode).json({
     status,
     message: err.message,
-    stack: process.env.NODE_ENV === 'production' ? null : err.stack
+    stack: process.env.NODE_ENV === 'production' ? null : err.stack,
   });
 });
 
@@ -55,7 +68,7 @@ app.use((err, req, res, next) => {
 app.use((req, res) => {
   res.status(404).json({
     status: 'fail',
-    message: `Route not found: ${req.originalUrl}`
+    message: `Route not found: ${req.originalUrl}`,
   });
 });
 
@@ -68,6 +81,5 @@ app.listen(PORT, () => {
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
   logger.error(`Unhandled Rejection: ${err.message}`);
-  // Close server & exit process
   process.exit(1);
 });
