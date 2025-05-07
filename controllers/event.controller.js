@@ -48,14 +48,14 @@ exports.getEvents = async (req, res, next) => {
 
     // Filter by date range
     if (startDate || endDate) {
-      filter.date = {};
+      filter.start = {};
       
       if (startDate) {
-        filter.date.$gte = new Date(startDate);
+        filter.start.$gte = new Date(startDate);
       }
       
       if (endDate) {
-        filter.date.$lte = new Date(endDate);
+        filter.start.$lte = new Date(endDate);
       }
     }
 
@@ -68,7 +68,7 @@ exports.getEvents = async (req, res, next) => {
     const events = await Event.find(filter)
       .populate('case', 'title caseNumber')
       .populate('createdBy', 'name email')
-      .sort({ date: 1 })
+      .sort({ start: 1 })
       .skip(skip)
       .limit(limit);
 
@@ -104,7 +104,7 @@ exports.getEvent = async (req, res, next) => {
     const event = await Event.findById(eventId)
       .populate('case', 'title caseNumber')
       .populate('createdBy', 'name email')
-      .populate('attendees', 'name email');
+      .populate('participants.user', 'name email');
 
     if (!event) {
       return next(new AppError('Event not found', 404));
@@ -142,21 +142,33 @@ exports.getEvent = async (req, res, next) => {
  */
 exports.createEvent = async (req, res, next) => {
   try {
-    const { title, date, time, type, location, description, caseId, attendees } = req.body;
+    // Log incoming payload for debugging
+    logger.info(`createEvent: Incoming payload: ${JSON.stringify(req.body)}`);
+
+    const { title, start, end, type, location, description, case: caseId, participants } = req.body;
+
+    // Validate required fields
+    if (!title || !start || !end) {
+      logger.error('createEvent: Missing required fields');
+      return next(new AppError('Title, start, and end are required', 400));
+    }
 
     // Check if case exists if provided
-    if (caseId) {
+    if (caseId && type !== 'client_meeting') {
       const caseItem = await Case.findById(caseId);
       if (!caseItem) {
+        logger.error(`createEvent: Case not found with id ${caseId}`);
         return next(new AppError('Case not found', 404));
       }
 
       // Check if user has permission to add events to this case
       if (req.user.role === 'client' && caseItem.client.toString() !== req.user.id.toString()) {
+        logger.error(`createEvent: Client ${req.user.id} not authorized for case ${caseId}`);
         return next(new AppError('Not authorized to add events to this case', 403));
       }
 
       if (req.user.role === 'lawyer' && caseItem.lawyer.toString() !== req.user.id.toString()) {
+        logger.error(`createEvent: Lawyer ${req.user.id} not authorized for case ${caseId}`);
         return next(new AppError('Not authorized to add events to this case', 403));
       }
     }
@@ -164,13 +176,15 @@ exports.createEvent = async (req, res, next) => {
     // Create event
     const newEvent = await Event.create({
       title,
-      date,
-      time,
+      start,
+      end,
       type,
-      location,
-      description,
-      case: caseId,
-      attendees: attendees || [],
+      location: location || undefined,
+      description: description || undefined,
+      case: caseId || undefined,
+      caseTitle: caseId ? (await Case.findById(caseId))?.title : undefined,
+      caseNumber: caseId ? (await Case.findById(caseId))?.caseNumber : undefined,
+      participants: participants || [],
       createdBy: req.user.id,
     });
 
@@ -188,7 +202,7 @@ exports.createEvent = async (req, res, next) => {
       data: newEvent,
     });
   } catch (error) {
-    logger.error(`Error creating event: ${error.message}`);
+    logger.error(`createEvent: Error: ${error.message}, Stack: ${error.stack}`);
     next(error);
   }
 };
@@ -231,7 +245,11 @@ exports.updateEvent = async (req, res, next) => {
     }
 
     // Update event
-    const updatedEvent = await Event.findByIdAndUpdate(eventId, req.body, {
+    const updatedEvent = await Event.findByIdAndUpdate(eventId, {
+      ...req.body,
+      caseTitle: req.body.case ? (await Case.findById(req.body.case))?.title : undefined,
+      caseNumber: req.body.case ? (await Case.findById(req.body.case))?.caseNumber : undefined,
+    }, {
       new: true,
       runValidators: true,
     });
