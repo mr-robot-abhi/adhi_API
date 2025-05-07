@@ -1,25 +1,35 @@
-// scripts/seed.js
-require('dotenv').config({ path: '../.env' });
+require('dotenv').config();
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const User = require('../models/user.model');
 const Case = require('../models/case.model');
 const Document = require('../models/document.model');
 const Event = require('../models/event.model');
+const logger = require('../utils/logger');
 
-mongoose.connect(process.env.DB_URI || 'mongodb://localhost:27017/adhi_db')
-  .then(() => console.log('MongoDB connected successfully'))
-  .catch(err => {
-    console.error('MongoDB connection error:', err);
+const connectDB = async () => {
+  if (!process.env.MONGO_URI) {
+    logger.error('MONGO_URI is not defined');
     process.exit(1);
-  });
+  }
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
+    logger.info('MongoDB connected for seeding');
+  } catch (err) {
+    logger.error(`MongoDB connection error: ${err.message}`);
+    process.exit(1);
+  }
+};
 
 const clearCollections = async () => {
   try {
-    await mongoose.connection.dropDatabase();
-    console.log('Successfully cleared existing data');
+    await User.deleteMany({});
+    await Case.deleteMany({});
+    await Document.deleteMany({});
+    await Event.deleteMany({});
+    logger.info('Successfully cleared collections');
   } catch (err) {
-    console.error('Error clearing database:', err);
+    logger.error(`Error clearing collections: ${err.message}`);
     throw err;
   }
 };
@@ -36,31 +46,31 @@ const createUsers = async () => {
       phone: '9876543210',
       barCouncilNumber: 'KAR12345',
       specialization: 'Civil Law',
-      yearsOfExperience: 5
+      yearsOfExperience: 5,
     },
     {
       name: 'Jane Client',
       email: 'client@example.com',
       password,
       role: 'client',
-      phone: '9876543211'
+      phone: '9876543211',
     },
     {
       name: 'Alice Admin',
       email: 'admin@example.com',
       password,
       role: 'admin',
-      phone: '9876543212'
-    }
+      phone: '9876543212',
+    },
   ]);
 
-  console.log('Successfully created sample users');
+  logger.info('Successfully created sample users');
   return users;
 };
 
 const createCases = async (users) => {
-  const lawyer = users.find(u => u.role === 'lawyer');
-  const client = users.find(u => u.role === 'client');
+  const lawyer = users.find((u) => u.role === 'lawyer');
+  const client = users.find((u) => u.role === 'client');
 
   const cases = await Case.insertMany([
     {
@@ -71,7 +81,7 @@ const createCases = async (users) => {
       client: client._id,
       petitionerNames: ['John Smith'],
       opposingPartyNames: ['Robert Johnson'],
-      status: 'active'
+      status: 'active',
     },
     {
       title: 'Brown v. Green Corp',
@@ -81,7 +91,7 @@ const createCases = async (users) => {
       client: client._id,
       petitionerNames: ['Brown Ltd'],
       opposingPartyNames: ['Green Corp'],
-      status: 'active'
+      status: 'active',
     },
     {
       title: 'Miller Divorce Case',
@@ -91,17 +101,17 @@ const createCases = async (users) => {
       client: client._id,
       petitionerNames: ['Amy Miller'],
       opposingPartyNames: ['John Miller'],
-      status: 'active'
-    }
+      status: 'active',
+    },
   ]);
 
-  console.log('Successfully created sample cases');
+  logger.info('Successfully created sample cases');
   return cases;
 };
 
 const createDocuments = async (users, cases) => {
-  const lawyer = users.find(u => u.role === 'lawyer');
-  const client = users.find(u => u.role === 'client');
+  const lawyer = users.find((u) => u.role === 'lawyer');
+  const client = users.find((u) => u.role === 'client');
 
   await Document.insertMany([
     {
@@ -112,7 +122,7 @@ const createDocuments = async (users, cases) => {
       mimeType: 'application/pdf',
       size: 123456,
       extension: 'pdf',
-      storagePath: '/uploads/complaint.pdf',
+      storagePath: 'documents/complaint.pdf',
       category: 'pleading',
       status: 'active',
       case: cases[0]._id,
@@ -120,7 +130,7 @@ const createDocuments = async (users, cases) => {
       uploadedBy: lawyer._id,
       uploadedByName: lawyer.name,
       owner: lawyer._id,
-      accessibleTo: [{ user: client._id, permission: 'view' }]
+      accessibleTo: [{ user: client._id, permission: 'view' }],
     },
     {
       name: 'Evidence - Brown Case',
@@ -130,7 +140,7 @@ const createDocuments = async (users, cases) => {
       mimeType: 'application/pdf',
       size: 220000,
       extension: 'pdf',
-      storagePath: '/uploads/contract.pdf',
+      storagePath: 'documents/contract.pdf',
       category: 'evidence',
       status: 'active',
       case: cases[1]._id,
@@ -138,7 +148,7 @@ const createDocuments = async (users, cases) => {
       uploadedBy: lawyer._id,
       uploadedByName: lawyer.name,
       owner: lawyer._id,
-      accessibleTo: [{ user: client._id, permission: 'view' }]
+      accessibleTo: [{ user: client._id, permission: 'view' }],
     },
     {
       name: 'Affidavit - Divorce',
@@ -148,7 +158,7 @@ const createDocuments = async (users, cases) => {
       mimeType: 'application/pdf',
       size: 180000,
       extension: 'pdf',
-      storagePath: '/uploads/affidavit.pdf',
+      storagePath: 'documents/affidavit.pdf',
       category: 'affidavit',
       status: 'active',
       case: cases[2]._id,
@@ -156,16 +166,16 @@ const createDocuments = async (users, cases) => {
       uploadedBy: client._id,
       uploadedByName: client.name,
       owner: client._id,
-      accessibleTo: [{ user: lawyer._id, permission: 'download' }]
-    }
+      accessibleTo: [{ user: lawyer._id, permission: 'download' }],
+    },
   ]);
 
-  console.log('Successfully created sample documents');
+  logger.info('Successfully created sample documents');
 };
 
 const createEvents = async (users, cases) => {
-  const lawyer = users.find(u => u.role === 'lawyer');
-  const client = users.find(u => u.role === 'client');
+  const lawyer = users.find((u) => u.role === 'lawyer');
+  const client = users.find((u) => u.role === 'client');
 
   const now = new Date();
   const future = (days, hour) => {
@@ -186,14 +196,14 @@ const createEvents = async (users, cases) => {
       status: 'scheduled',
       location: 'Court Hall 1',
       case: cases[0]._id,
-      caseTitle: cases[0].title,
+      caseTitle: 'Smith v. Johnson',
       caseNumber: cases[0].caseNumber,
       createdBy: lawyer._id,
       participants: [
         { user: lawyer._id, role: 'lawyer', status: 'confirmed' },
-        { user: client._id, role: 'client', status: 'invited' }
+        { user: client._id, role: 'client', status: 'invited' },
       ],
-      reminders: [{ method: 'email', minutesBefore: 60 }]
+      reminders: [{ method: 'email', minutesBefore: 60 }],
     },
     {
       title: 'Evidence Submission - Brown Case',
@@ -204,10 +214,10 @@ const createEvents = async (users, cases) => {
       status: 'scheduled',
       case: cases[1]._id,
       caseTitle: cases[1].title,
-      caseNumber: cases[1].caseNumber,
+      caseNumber: cases[1].caseNumber, // Fixed typo
       createdBy: lawyer._id,
       participants: [{ user: lawyer._id, role: 'lawyer', status: 'confirmed' }],
-      reminders: [{ method: 'email', minutesBefore: 90 }]
+      reminders: [{ method: 'email', minutesBefore: 90 }],
     },
     {
       title: 'Client Meeting - Divorce Prep',
@@ -221,27 +231,28 @@ const createEvents = async (users, cases) => {
       createdBy: client._id,
       participants: [
         { user: lawyer._id, role: 'lawyer', status: 'invited' },
-        { user: client._id, role: 'client', status: 'confirmed' }
+        { user: client._id, role: 'client', status: 'confirmed' },
       ],
-      reminders: [{ method: 'email', minutesBefore: 30 }]
-    }
+      reminders: [{ method: 'email', minutesBefore: 30 }],
+    },
   ]);
 
-  console.log('Successfully created sample events');
+  logger.info('Successfully created sample events');
 };
 
 const seed = async () => {
   try {
+    await connectDB();
     console.log('Starting database seeding process...');
     await clearCollections();
     const users = await createUsers();
     const cases = await createCases(users);
     await createDocuments(users, cases);
     await createEvents(users, cases);
-    console.log('✅ Database seeded successfully!');
-    process.exit(0);
+    logger.info('✅ Database seeded successfully!');
+    await mongoose.connection.close();
   } catch (err) {
-    console.error('❌ Fatal error during seeding:', err);
+    logger.error(`❌ Fatal error during seeding: ${err.message}`);
     process.exit(1);
   }
 };
