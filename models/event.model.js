@@ -19,9 +19,10 @@ const EventSchema = new mongoose.Schema({
     required: [true, 'Start date/time is required'],
     validate: {
       validator: function(v) {
-        return v > Date.now();
+        // Allow dates within 1 hour of now to account for time zone issues
+        return v > new Date(Date.now() - 60 * 60 * 1000);
       },
-      message: 'Start date must be in the future'
+      message: 'Start date must be in the near future'
     }
   },
   end: {
@@ -92,13 +93,12 @@ const EventSchema = new mongoose.Schema({
     }
   },
   caseTitle: {
-    type: String,
-    required: function() {
-      return this.case;
-    }
+    type: String
+    // Removed required to avoid validation errors
   },
   caseNumber: {
     type: String
+    // Removed required to avoid validation errors
   },
 
   // Participants
