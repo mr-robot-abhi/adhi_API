@@ -3,6 +3,7 @@ const Document = require("../models/document.model")
 const AppError = require("../utils/appError")
 const logger = require("../utils/logger")
 const mongoose = require("mongoose")
+const { uploadFile, getSignedUrl } = require("../utils/firebaseStorage")
 
 /**
  * @desc    Get all cases or filtered cases
@@ -93,10 +94,8 @@ exports.getCase = async (req, res, next) => {
       return next(new AppError("Case not found", 404))
     }
 
-    if (
-      (req.user.role === "client" && caseItem.client && caseItem.client.toString() !== req.user.id.toString()) ||
-      (req.user.role === "lawyer" && caseItem.lawyer && caseItem.lawyer.toString() !== req.user.id.toString())
-    ) {
+    // Allow all authenticated users to view cases
+    if (req.user.role === "client" && caseItem.client && caseItem.client.toString() !== req.user.id.toString()) {
       return next(new AppError("Not authorized to access this case", 403))
     }
 
@@ -117,9 +116,7 @@ exports.getCase = async (req, res, next) => {
  */
 exports.createCase = async (req, res, next) => {
   try {
-    /*if (req.user.role === "client") {
-      return next(new AppError("Not authorized to create cases", 403))
-    }*/
+    // Allow all authenticated users to create cases
 
     const caseData = {
       ...req.body,
@@ -334,6 +331,97 @@ exports.getRecentCases = async (req, res, next) => {
     next(error)
   }
 }
+
+/**
+ * @desc    Upload documents to case
+ * @route   POST /api/cases/:id/documents
+ * @access  Private
+ */
+exports.uploadCaseDocuments = async (req, res, next) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return next(new AppError('Please upload at least one file', 400));
+    }
+
+    const caseId = req.params.id;
+
+    // Check if case exists
+    const caseItem = await Case.findById(caseId);
+
+    if (!caseItem) {
+      return next(new AppError('Case not found', 404));
+    }
+
+    // Check if user has permission to add documents to this case
+    if (req.user.role === 'client' && caseItem.client.toString() !== req.user.id.toString()) {
+      return next(new AppError('Not authorized to add documents to this case', 403));
+    }
+
+    if (req.user.role === 'lawyer' && caseItem.lawyer.toString() !== req.user.id.toString()) {
+      return next(new AppError('Not authorized to add documents to this case', 403));
+    }
+
+    const uploadedDocs = [];
+
+    // Handle multiple files
+    for (const file of req.files) {
+      // Upload file to Firebase Storage
+      const fileBuffer = file.buffer;
+      const originalName = file.originalname;
+      const mimeType = file.mimetype;
+      
+      const fileUrl = await uploadFile(
+        fileBuffer, 
+        `cases/${caseId}/documents/${Date.now()}_${originalName}`,
+        mimeType
+      );
+
+      // Parse tags if provided
+      const parsedTags = req.body.tags ? req.body.tags.split(',').map(tag => tag.trim()) : [];
+
+      // Create document record
+      const newDocument = await Document.create({
+        name: req.body.name || originalName,
+        description: req.body.description || `Document for case ${caseItem.title || caseId}`,
+        case: caseId,
+        category: req.body.category || 'Other',
+        tags: parsedTags,
+        fileType: mimeType,
+        fileSize: file.size,
+        fileName: originalName,
+        fileUrl,
+        uploadedBy: req.user.id,
+        status: 'Pending', // Default status
+      });
+
+      // Add document to case if not already present
+      if (!caseItem.documents.includes(newDocument._id)) {
+        caseItem.documents.push(newDocument._id);
+      }
+
+      // Get signed URL for immediate access
+      const signedUrl = await getSignedUrl(fileUrl);
+      
+      uploadedDocs.push({
+        ...newDocument.toObject(),
+        signedUrl
+      });
+
+      logger.info(`Document uploaded to case ${caseId}: ${newDocument.name} (ID: ${newDocument._id})`);
+    }
+
+    // Save the updated case
+    await caseItem.save();
+
+    res.status(201).json({
+      success: true,
+      data: uploadedDocs,
+    });
+  } catch (error) {
+    logger.error(`Error uploading documents to case: ${error.message}`);
+    next(error);
+  }
+};
 
 /**
  * @desc    Get case timeline
