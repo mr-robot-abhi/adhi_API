@@ -12,6 +12,7 @@ const CaseSchema = new mongoose.Schema(
     caseNumber: {
       type: String,
       required: [true, "Case number is required"],
+      unique: true,
       index: true
     },
     caseType: {

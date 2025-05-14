@@ -1,5 +1,7 @@
 const winston = require('winston');
 
+console.log('Initializing logger');
+
 const logger = winston.createLogger({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
   format: winston.format.combine(
@@ -20,15 +22,5 @@ const logger = winston.createLogger({
     })
   ]
 });
-
-// If we're not in production, log to the console with pretty formatting
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(new winston.transports.Console({
-    format: winston.format.combine(
-      winston.format.colorize(),
-      winston.format.simple()
-    )
-  }));
-}
 
 module.exports = logger;

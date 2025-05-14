@@ -18,7 +18,7 @@ const schemas = {
     email: emailSchema,
     password: passwordSchema,
     name: Joi.string().min(2).max(100).required().trim(),
-    role: Joi.string().valid('client', 'lawyer', 'admin').required()
+    role: Joi.string().valid('client', 'lawyer').required()
   }),
   case: Joi.object({
     title: Joi.string().min(3).max(200).required(),

@@ -6,7 +6,7 @@ const logger = require('../utils/logger');
 /**
  * @desc    Get all events or filtered events
  * @route   GET /api/events
- * @access  Private
+ * @access  Private (Lawyers and Clients)
  */
 exports.getEvents = async (req, res, next) => {
   try {
@@ -27,7 +27,7 @@ exports.getEvents = async (req, res, next) => {
       const lawyerCaseIds = lawyerCases.map(c => c._id);
       filter.case = { $in: lawyerCaseIds };
     }
-    // Admins can see all events (no additional filter)
+
 
     // Apply additional filters if provided
     if (search) {

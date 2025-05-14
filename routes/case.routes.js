@@ -61,8 +61,8 @@ router.post('/', caseController.createCase);
 // Update case - all users
 router.put('/:id', caseController.updateCase);
 
-// Delete case - only admins
-router.delete('/:id', authorize('admin'), caseController.deleteCase);
+// Delete case - all authenticated users can delete their own cases
+router.delete('/:id', caseController.deleteCase);
 
 // Add client to case - all users
 router.post('/:id/clients', caseController.addClientToCase);

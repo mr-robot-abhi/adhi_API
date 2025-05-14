@@ -49,7 +49,7 @@ exports.checkOwnership = (model) => {
         isOwner = resource.user.equals(req.user._id);
       }
 
-      if (!isOwner && req.user.role !== 'admin') {
+      if (!isOwner) {
         return res.status(403).json({
           errors: [{ msg: 'Not authorized to access this resource' }]
         });

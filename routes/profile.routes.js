@@ -15,22 +15,5 @@ router.put('/profile', profileController.updateProfile);
 // Change password
 router.post('/change-password', profileController.changePassword);
 
-// Admin only routes
-router.use(authorize('admin'));
-
-// Get all users
-router.get('/', profileController.getUsers);
-
-// Get single user
-router.get('/:id', profileController.getUser);
-
-// Create user (admin)
-router.post('/', profileController.createUser);
-
-// Update user (admin)
-router.put('/:id', profileController.updateUser);
-
-// Delete user (admin)
-router.delete('/:id', profileController.deleteUser);
 
 module.exports = router;

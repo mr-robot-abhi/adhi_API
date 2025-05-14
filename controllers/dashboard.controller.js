@@ -127,7 +127,7 @@ exports.getRecentCases = async (req, res, next) => {
         court: caseItem.court,
         date: `Updated ${getTimeAgo(caseItem.updatedAt)}`,
         urgent: caseItem.isUrgent,
-        nextHearing: caseItem.hearingDate ? formatDate(caseItem.hearingDate) : null
+        nextHearingDate: caseItem.nextHearingDate ? formatDate(caseItem.nextHearingDate) : null
       };
     });
     

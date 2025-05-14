@@ -2,7 +2,7 @@ const Document = require('../models/document.model');
 const Case = require('../models/case.model');
 const AppError = require('../utils/appError');
 const logger = require('../utils/logger');
-const { uploadFile, deleteFile, getSignedUrl } = require('../utils/firebaseStorage');
+const { uploadFileToGCS, getPublicUrl, deleteFileFromGCS } = require('../utils/gcsStorage');
 
 /**
  * @desc    Get all documents or filtered documents
@@ -28,7 +28,7 @@ exports.getDocuments = async (req, res, next) => {
       const lawyerCaseIds = lawyerCases.map(c => c._id);
       filter.case = { $in: lawyerCaseIds };
     }
-    // Admins can see all documents (no additional filter)
+
 
     // Apply additional filters if provided
     if (search) {
@@ -199,16 +199,22 @@ exports.uploadDocument = async (req, res, next) => {
       return next(new AppError('Not authorized to add documents to this case', 403));
     }
 
-    // Upload file to Firebase Storage
+    // Upload file to Google Cloud Storage
     const fileBuffer = req.file.buffer;
     const originalName = req.file.originalname;
     const mimeType = req.file.mimetype;
-    
-    const fileUrl = await uploadFile(
-      fileBuffer, 
-      `cases/${caseId}/documents/${Date.now()}_${originalName}`,
-      mimeType
-    );
+
+    let fileUrl;
+    try {
+      fileUrl = await uploadFileToGCS(
+        fileBuffer,
+        `cases/${caseId}/documents/${Date.now()}_${originalName}`,
+        mimeType
+      );
+    } catch (gcsError) {
+      logger.error(`Error uploading file to GCS: ${gcsError.message}`);
+      return next(new AppError('Error uploading file to storage', 500));
+    }
 
     // Parse tags if provided
     const parsedTags = tags ? tags.split(',').map(tag => tag.trim()) : [];
@@ -376,16 +382,12 @@ exports.deleteDocument = async (req, res, next) => {
 /**
  * @desc    Share document with users
  * @route   POST /api/documents/:id/share
- * @access  Private (Lawyers and Admins only)
+ * @access  Private (Lawyers and Clients)
  */
 exports.shareDocument = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { users } = req.body;
-
-    if (req.user.role === 'client') {
-      return next(new AppError('Not authorized to share documents', 403));
-    }
 
     const document = await Document.findById(id);
 

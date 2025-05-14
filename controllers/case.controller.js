@@ -128,6 +128,12 @@ exports.createCase = async (req, res, next) => {
       return next(new AppError("Missing required fields: title, caseNumber, caseType, or status", 400))
     }
 
+    // Prevent duplicate case numbers
+    const existing = await Case.findOne({ caseNumber: caseData.caseNumber });
+    if (existing) {
+      return next(new AppError("A case with this case number already exists.", 409));
+    }
+
     const newCase = await Case.create(caseData)
     logger.info(`New case created: ${newCase.title} (ID: ${newCase._id})`)
 
@@ -136,6 +142,11 @@ exports.createCase = async (req, res, next) => {
       data: newCase,
     })
   } catch (error) {
+    // Handle duplicate key error (unique constraint)
+    if (error.code === 11000 && error.keyPattern && error.keyPattern.caseNumber) {
+      logger.error('Duplicate case number error.');
+      return next(new AppError('A case with this case number already exists.', 409));
+    }
     logger.error(`Error creating case: ${error.message}`)
     next(error)
   }
@@ -144,7 +155,7 @@ exports.createCase = async (req, res, next) => {
 /**
  * @desc    Update case
  * @route   PUT /api/cases/:id
- * @access  Private (Lawyers and Admins only)
+ * @access  Private (Lawyers and Clients)
  */
 exports.updateCase = async (req, res, next) => {
   try {
@@ -155,26 +166,23 @@ exports.updateCase = async (req, res, next) => {
       return next(new AppError("Case not found", 404))
     }
 
+    // Allow update if user is assigned lawyer or client
     if (
-      (req.user.role === "lawyer" &&
-        caseToUpdate.lawyer &&
-        caseToUpdate.lawyer.toString() !== req.user.id.toString()) ||
-      req.user.role === "client"
+      (caseToUpdate.lawyer && caseToUpdate.lawyer.toString() === req.user.id) ||
+      (caseToUpdate.client && caseToUpdate.client.toString() === req.user.id)
     ) {
+      const updatedCase = await Case.findByIdAndUpdate(caseId, req.body, {
+        new: true,
+        runValidators: true,
+      })
+      logger.info(`Case updated: ${updatedCase.title} (ID: ${updatedCase._id})`)
+      return res.status(200).json({
+        success: true,
+        data: updatedCase,
+      })
+    } else {
       return next(new AppError("Not authorized to update this case", 403))
     }
-
-    const updatedCase = await Case.findByIdAndUpdate(caseId, req.body, {
-      new: true,
-      runValidators: true,
-    })
-
-    logger.info(`Case updated: ${updatedCase.title} (ID: ${updatedCase._id})`)
-
-    res.status(200).json({
-      success: true,
-      data: updatedCase,
-    })
   } catch (error) {
     logger.error(`Error updating case: ${error.message}`)
     next(error)
@@ -184,19 +192,26 @@ exports.updateCase = async (req, res, next) => {
 /**
  * @desc    Delete case
  * @route   DELETE /api/cases/:id
- * @access  Private (Admins only)
+ * @access  Private (Lawyers and Clients)
  */
 exports.deleteCase = async (req, res, next) => {
   try {
-    if (req.user.role !== "admin") {
-      return next(new AppError("Only admins can delete cases", 403))
-    }
-
     const caseId = req.params.id
     const caseToDelete = await Case.findById(caseId)
 
     if (!caseToDelete) {
       return next(new AppError("Case not found", 404))
+    }
+
+    // Only allow deletion if user is owner (lawyer or client assigned to this case)
+    if (
+      (caseToDelete.lawyer && caseToDelete.lawyer.toString() === req.user.id) ||
+      (caseToDelete.client && caseToDelete.client.toString() === req.user.id)
+    ) {
+      await caseToDelete.deleteOne();
+      return res.status(200).json({ success: true, message: "Case deleted" });
+    } else {
+      return next(new AppError("Not authorized to delete this case", 403))
     }
 
     // Delete associated documents
@@ -218,16 +233,12 @@ exports.deleteCase = async (req, res, next) => {
 /**
  * @desc    Add client to case
  * @route   POST /api/cases/:id/clients
- * @access  Private (Lawyers and Admins only)
+ * @access  Private (Lawyers and Clients)
  */
 exports.addClientToCase = async (req, res, next) => {
   try {
     const { id } = req.params
     const { clientId } = req.body
-
-    if (req.user.role === "client") {
-      return next(new AppError("Not authorized to modify cases", 403))
-    }
 
     const caseItem = await Case.findById(id)
     if (!caseItem) {

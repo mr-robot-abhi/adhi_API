@@ -55,13 +55,7 @@ const createUsers = async () => {
       role: 'client',
       phone: '9876543211',
     },
-    {
-      name: 'Alice Admin',
-      email: 'admin@example.com',
-      password,
-      role: 'admin',
-      phone: '9876543212',
-    },
+
   ]);
 
   logger.info('Successfully created sample users');

@@ -9,16 +9,38 @@ const logger = require('./utils/logger');
 // Load environment variables
 dotenv.config();
 
+// Debug: Confirm server.js execution
+console.log('Executing server.js');
+
 // Create Express app
 const app = express();
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => logger.info('MongoDB connected'))
-  .catch(err => {
+const connectDB = async () => {
+  try {
+    // Clear existing listeners
+    mongoose.connection.removeAllListeners('connected');
+    mongoose.connection.removeAllListeners('error');
+
+    // Register listeners
+    mongoose.connection.once('connected', () => {
+      logger.info('MongoDB connected');
+    });
+    mongoose.connection.on('error', (err) => {
+      logger.error(`MongoDB connection error: ${err.message}`);
+    });
+
+    // Connect without deprecated options
+    console.log('Connecting to MongoDB with URI:', process.env.MONGO_URI);
+    await mongoose.connect(process.env.MONGO_URI);
+  } catch (err) {
     logger.error(`MongoDB connection error: ${err.message}`);
     process.exit(1);
-  });
+  }
+};
+
+// Call connection function
+connectDB();
 
 // CORS configuration
 const allowedOrigins = [
@@ -50,6 +72,7 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 // API Routes
+console.log('Mounting routes');
 app.use('/api', routes);
 
 // Error handling middleware
@@ -74,12 +97,22 @@ app.use((req, res) => {
 
 // Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
+  console.log('Starting server on port', PORT);
   logger.info(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+});
+
+// Handle nodemon restarts
+process.on('SIGUSR2', () => {
+  logger.info('Nodemon restart detected, shutting down gracefully');
+  server.close(() => {
+    logger.info('Server closed');
+    process.kill(process.pid, 'SIGUSR2');
+  });
 });
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
   logger.error(`Unhandled Rejection: ${err.message}`);
-  process.exit(1);
+  server.close(() => process.exit(1));
 });
