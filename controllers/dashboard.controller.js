@@ -12,26 +12,28 @@ const logger = require('../utils/logger');
 exports.getSummary = async (req, res, next) => {
   try {
     // Build filter based on user role
-    const filter = {};
-    
-    if (req.user.role === 'lawyer') {
-      filter.lawyer = req.user.id;
-    } else if (req.user.role === 'client') {
-      filter.client = req.user.id;
-    }
+    const userId = req.user.id;
+    const caseOrFilter = {
+      $or: [
+        { creator: userId },
+        { lawyer: userId },
+        { client: userId }
+      ]
+    };
+    console.log('Query for GET /api/dashboard/summary:', JSON.stringify(caseOrFilter));
 
     // Get total cases
-    const totalCases = await Case.countDocuments(filter);
+    const totalCases = await Case.countDocuments(caseOrFilter);
     
     // Get active cases
-    const activeCases = await Case.countDocuments({ 
-      ...filter, 
-      status: 'active' 
+    const activeCases = await Case.countDocuments({
+      ...caseOrFilter,
+      status: 'active'
     });
     
     // Get urgent cases
     const urgentCases = await Case.countDocuments({
-      ...filter,
+      ...caseOrFilter,
       isUrgent: true
     });
     
@@ -64,12 +66,12 @@ exports.getSummary = async (req, res, next) => {
     
     // Calculate success rate (closed cases with successful outcome)
     const closedCases = await Case.countDocuments({
-      ...filter,
+      ...caseOrFilter,
       status: 'closed'
     });
     
     const successfulCases = await Case.countDocuments({
-      ...filter,
+      ...caseOrFilter,
       status: 'closed',
       outcome: 'successful'
     });
@@ -102,22 +104,24 @@ exports.getSummary = async (req, res, next) => {
  */
 exports.getRecentCases = async (req, res, next) => {
   try {
-    // Build filter based on user role
-    const filter = {};
-    
-    if (req.user.role === 'lawyer') {
-      filter.lawyer = req.user.id;
-    } else if (req.user.role === 'client') {
-      filter.client = req.user.id;
-    }
-    
+    const userId = req.user.id;
+    const caseOrFilter = {
+      $or: [
+        { creator: userId },
+        { lawyer: userId },
+        { client: userId }
+      ]
+    };
+    console.log('Query for GET /api/dashboard/recent-cases:', JSON.stringify(caseOrFilter));
+
     // Get recent cases
-    const recentCases = await Case.find(filter)
+    const recentCases = await Case.find(caseOrFilter)
       .sort({ updatedAt: -1 })
       .limit(5)
       .populate('lawyer', 'name email')
       .populate('client', 'name email');
-    
+    console.log('Cases returned:', recentCases.map(c => c._id));
+
     // Format cases for frontend
     const formattedCases = recentCases.map(caseItem => {
       return {
@@ -130,7 +134,7 @@ exports.getRecentCases = async (req, res, next) => {
         nextHearingDate: caseItem.nextHearingDate ? formatDate(caseItem.nextHearingDate) : null
       };
     });
-    
+
     res.status(200).json(formattedCases);
   } catch (error) {
     logger.error(`Error getting recent cases: ${error.message}`);
