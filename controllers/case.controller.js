@@ -15,13 +15,14 @@ exports.getCases = async (req, res, next) => {
     const { search, status, type, district, date } = req.query
     const filter = {}
 
-    if (req.user.role === "client") {
-      filter.client = req.user.id
-    } else if (req.user.role === "lawyer") {
-      filter.lawyer = req.user.id
-    }
+    const userId = req.user.id;
+filter.$or = [
+  { creator: userId },
+  { lawyer: userId },
+  { client: userId }
+];
 
-    if (search) {
+if (search) {
       filter.$or = [
         { title: { $regex: search, $options: "i" } },
         { caseNumber: { $regex: search, $options: "i" } },
