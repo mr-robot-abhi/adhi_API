@@ -49,11 +49,46 @@ const validatePassword = (password) => {
   return !error;
 };
 
+const createCaseSchema = Joi.object({
+  parties: Joi.object({
+    petitioner: Joi.array().items(
+      Joi.object({
+        role: Joi.string().valid('Petitioner', 'Appellant', 'Plaintiff', 'Complainant').required(),
+        type: Joi.string().valid('Individual', 'Corporation', 'Organization').required(),
+        name: Joi.string().required()
+      })
+    ).required(),
+    respondent: Joi.array().items(
+      Joi.object({
+        role: Joi.string().valid('Respondent', 'Accused', 'Defendant', 'Opponent').required(),
+        type: Joi.string().valid('Individual', 'Corporation', 'Organization').required(),
+        name: Joi.string().required(),
+        opposingCounsel: Joi.string().optional()
+      })
+    ).required()
+  }).required(),
+  advocates: Joi.array().items(
+    Joi.object({
+      name: Joi.string().required(),
+      email: Joi.string().email().allow('', null),
+      contact: Joi.string().allow('', null),
+      company: Joi.string().allow('', null),
+      gst: Joi.string().allow('', null),
+      spock: Joi.string().allow('', null),
+      poc: Joi.string().allow('', null),
+      isLead: Joi.boolean().default(false),
+      level: Joi.string().valid('Senior', 'Junior').allow('', null)
+    })
+  ),
+  // Allow other fields for case creation
+}).unknown(true);
+
 module.exports = {
   validateLogin: validate(schemas.login),
   validateRegister: validate(schemas.register),
   validateCase: validate(schemas.case),
   validateDocument: validate(schemas.document),
   validatePassword,
-  schemas
+  schemas,
+  createCaseSchema
 };

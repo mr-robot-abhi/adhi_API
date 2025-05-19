@@ -95,33 +95,38 @@ const CaseSchema = new mongoose.Schema(
       type: Date,
     },
 
-    // Parties Information
-    petitionerRole: {
-      type: String,
-      default: "petitioner",
-      enum: ["petitioner", "appellant", "plaintiff", "complainant"],
+    // Parties Section (new structure)
+    parties: {
+      petitioner: [
+        {
+          role: { type: String, enum: ['Petitioner', 'Appellant', 'Plaintiff', 'Complainant'], required: true },
+          type: { type: String, enum: ['Individual', 'Corporation', 'Organization'], required: true },
+          name: { type: String, required: true }
+        }
+      ],
+      respondent: [
+        {
+          role: { type: String, enum: ['Respondent', 'Accused', 'Defendant', 'Opponent'], required: true },
+          type: { type: String, enum: ['Individual', 'Corporation', 'Organization'], required: true },
+          name: { type: String, required: true },
+          opposingCounsel: { type: String }
+        }
+      ]
     },
-    petitionerType: {
-      type: String,
-      default: "individual",
-      enum: ["individual", "business", "government", "company"],
-    },
-    petitionerNames: [{
-      type: String,
-      default: ["Anonymous Petitioner"],
-    }],
-    opposingRole: {
-      type: String,
-      default: "defendant",
-      enum: ["defendant", "respondent", "accused", "opponent"],
-    },
-    opposingPartyNames: [{
-      type: String,
-      default: [],
-    }],
-    opposingCounsel: {
-      type: String,
-    },
+    // Advocates Section (updated structure)
+    advocates: [
+      {
+        name: { type: String, required: true },
+        email: { type: String },
+        contact: { type: String },
+        company: { type: String },
+        gst: { type: String },
+        spock: { type: String }, // Spock number
+        poc: { type: String },   // Point of contact
+        isLead: { type: Boolean, default: false },
+        level: { type: String, enum: ["Senior", "Junior"] }
+      }
+    ],
 
     // Case Management
     priority: {

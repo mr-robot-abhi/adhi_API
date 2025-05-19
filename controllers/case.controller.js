@@ -115,19 +115,24 @@ exports.getCase = async (req, res, next) => {
  * @route   POST /api/cases
  * @access  Private (Lawyers and Admins only)
  */
+const { createCaseSchema } = require('../utils/validation');
+
 exports.createCase = async (req, res, next) => {
   try {
-    // Allow all authenticated users to create cases
+    // Validate request body against new schema
+    const { error } = createCaseSchema.validate(req.body);
+    if (error) return next(new AppError(error.details[0].message, 400));
 
+    const { parties, advocates, ...otherFields } = req.body;
     const caseData = {
-      ...req.body,
-      lawyer: req.user.id,
-    }
-
-    // Ensure required fields are present
-    if (!caseData.title || !caseData.caseNumber || !caseData.caseType || !caseData.status) {
-      return next(new AppError("Missing required fields: title, caseNumber, caseType, or status", 400))
-    }
+      ...otherFields,
+      parties: {
+        petitioner: parties.petitioner,
+        respondent: parties.respondent
+      },
+      advocates,
+      lawyer: req.user.id
+    };
 
     // Prevent duplicate case numbers
     const existing = await Case.findOne({ caseNumber: caseData.caseNumber });
@@ -135,23 +140,22 @@ exports.createCase = async (req, res, next) => {
       return next(new AppError("A case with this case number already exists.", 409));
     }
 
-    const newCase = await Case.create(caseData)
-    logger.info(`New case created: ${newCase.title} (ID: ${newCase._id})`)
+    const newCase = await Case.create(caseData);
+    logger.info(`New case created: ${newCase.title} (ID: ${newCase._id})`);
 
     res.status(201).json({
-      success: true,
-      data: newCase,
-    })
+      status: 'success',
+      data: { case: newCase }
+    });
   } catch (error) {
-    // Handle duplicate key error (unique constraint)
     if (error.code === 11000 && error.keyPattern && error.keyPattern.caseNumber) {
       logger.error('Duplicate case number error.');
       return next(new AppError('A case with this case number already exists.', 409));
     }
-    logger.error(`Error creating case: ${error.message}`)
-    next(error)
+    logger.error(`Error creating case: ${error.message}`);
+    next(error);
   }
-}
+};
 
 /**
  * @desc    Update case
