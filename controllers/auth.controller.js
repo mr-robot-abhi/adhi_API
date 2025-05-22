@@ -1,6 +1,6 @@
 const User = require('../models/user.model');
 const Profile = require('../models/profile.model');
-const { generateToken, verifyToken } = require('../utils/jwt');
+const { generateAccessToken, generateRefreshToken, verifyToken } = require('../utils/jwt'); // Updated to generateAccessToken
 const AppError = require('../utils/appError');
 const logger = require('../utils/logger');
 const bcrypt = require('bcryptjs');
@@ -86,7 +86,7 @@ exports.register = async (req, res, next) => {
       bio,
     });
 
-    const token = generateToken(user._id);
+    const token = generateAccessToken(user);
 
     const userData = {
       id: user._id,
@@ -131,7 +131,7 @@ exports.login = async (req, res, next) => {
     }
 
     // Generate JWT token
-    const token = generateToken(user._id);
+    const token = generateAccessToken(user);
 
     // Update last login timestamp
     user.lastLogin = Date.now();

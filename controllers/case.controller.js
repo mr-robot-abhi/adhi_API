@@ -95,9 +95,14 @@ exports.getCase = async (req, res, next) => {
       return next(new AppError("Case not found", 404))
     }
 
-    // Allow all authenticated users to view cases
-    if (req.user.role === "client" && caseItem.client && caseItem.client.toString() !== req.user.id.toString()) {
-      return next(new AppError("Not authorized to access this case", 403))
+    // Check authorization: User must be the assigned lawyer or client
+    const userIdStr = req.user.id.toString();
+    const caseLawyerIdStr = caseItem.lawyer?._id?.toString();
+    const caseClientIdStr = caseItem.client?._id?.toString();
+
+    if (!(caseLawyerIdStr === userIdStr || caseClientIdStr === userIdStr)) {
+      // If the user is neither the lawyer nor the client associated with the case
+      return next(new AppError("Not authorized to access this case", 403));
     }
 
     res.status(200).json({
@@ -113,7 +118,7 @@ exports.getCase = async (req, res, next) => {
 /**
  * @desc    Create new case
  * @route   POST /api/cases
- * @access  Private (Lawyers and Admins only)
+ * @access  Private (Lawyers and Clients)
  */
 const { createCaseSchema } = require('../utils/validation');
 
@@ -123,15 +128,18 @@ exports.createCase = async (req, res, next) => {
     const { error } = createCaseSchema.validate(req.body);
     if (error) return next(new AppError(error.details[0].message, 400));
 
-    const { parties, advocates, ...otherFields } = req.body;
+    const { parties, advocates, clients, ...otherFields } = req.body;
     const caseData = {
       ...otherFields,
       parties: {
         petitioner: parties.petitioner,
         respondent: parties.respondent
       },
-      advocates,
-      lawyer: req.user.id
+      // Conditionally include advocates or clients based on what's provided
+      ...(advocates && advocates.length > 0 && { advocates }),
+      ...(clients && clients.length > 0 && { clients }),
+      // Set the primary lawyer or client based on the user's role
+      ...(req.user.role === 'lawyer' ? { lawyer: req.user.id } : { client: req.user.id })
     };
 
     // Prevent duplicate case numbers
@@ -174,9 +182,29 @@ exports.updateCase = async (req, res, next) => {
     // Allow update if user is assigned lawyer or client
     if (
       (caseToUpdate.lawyer && caseToUpdate.lawyer.toString() === req.user.id) ||
-      (caseToUpdate.client && caseToUpdate.client.toString() === req.user.id)
+      (caseToUpdate.client && caseToUpdate.client.toString() === req.user.id) ||
+      (req.user.role === 'lawyer' && !caseToUpdate.lawyer) || // Allow lawyer to assign themselves if not already assigned
+      (req.user.role === 'client' && !caseToUpdate.client)  // Allow client to assign themselves if not already assigned
     ) {
-      const updatedCase = await Case.findByIdAndUpdate(caseId, req.body, {
+      // Prepare update data, ensuring we handle clients and advocates correctly
+      const { clients, advocates, ...otherUpdateData } = req.body;
+      const updatePayload = {
+        ...otherUpdateData,
+      };
+
+      if (req.user.role === 'lawyer') {
+        // If lawyer is updating, they can update the 'clients' array.
+        // 'advocates' array should remain as is unless explicitly changed by a client user.
+        if (clients !== undefined) updatePayload.clients = clients; // Allow clearing or updating clients
+        if (!caseToUpdate.lawyer) updatePayload.lawyer = req.user.id; // Assign lawyer if not set
+      } else if (req.user.role === 'client') {
+        // If client is updating, they can update the 'advocates' array.
+        // 'clients' array should remain as is unless explicitly changed by a lawyer user.
+        if (advocates !== undefined) updatePayload.advocates = advocates; // Allow clearing or updating advocates
+        if (!caseToUpdate.client) updatePayload.client = req.user.id; // Assign client if not set
+      }
+
+      const updatedCase = await Case.findByIdAndUpdate(caseId, updatePayload, {
         new: true,
         runValidators: true,
       })

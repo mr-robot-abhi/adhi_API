@@ -65,15 +65,21 @@ UserSchema.methods.comparePassword = function (candidatePassword) {
 };
 
 // Generate JWT
+const { v4: uuidv4 } = require('uuid');
+
 UserSchema.methods.generateAuthToken = function () {
   return jwt.sign(
     {
       id: this._id,
       role: this.role,
-      email: this.email
+      email: this.email,
+      jti: uuidv4() // Unique token identifier
     },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRE || '30d' }
+    {
+      expiresIn: process.env.JWT_ACCESS_EXPIRE || '15m', // Use access token expiry
+      issuer: process.env.JWT_ISSUER || 'adhi-api' // Use issuer from env or default
+    }
   );
 };
 

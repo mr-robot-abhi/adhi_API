@@ -95,24 +95,54 @@ const CaseSchema = new mongoose.Schema(
       type: Date,
     },
 
-    // Parties Section (new structure)
+    // Parties Section (revised structure)
     parties: {
-      petitioner: [
-        {
-          role: { type: String, enum: ['Petitioner', 'Appellant', 'Plaintiff', 'Complainant'], required: true },
-          type: { type: String, enum: ['Individual', 'Corporation', 'Organization'], required: true },
-          name: { type: String, required: true }
-        }
-      ],
-      respondent: [
-        {
-          role: { type: String, enum: ['Respondent', 'Accused', 'Defendant', 'Opponent'], required: true },
-          type: { type: String, enum: ['Individual', 'Corporation', 'Organization'], required: true },
-          name: { type: String, required: true },
-          opposingCounsel: { type: String }
-        }
-      ]
+      petitioner: [{
+        _id: false, // No separate _id for subdocuments unless needed
+        role: { 
+          type: String, 
+          enum: ['Petitioner', 'Appellant', 'Plaintiff', 'Complainant'], 
+          required: function() { return this.parent().petitioner && this.parent().petitioner.length > 0; } // Required if petitioner array is not empty
+        },
+        type: { 
+          type: String, 
+          enum: ['Individual', 'Corporation', 'Organization'], 
+          required: function() { return this.parent().petitioner && this.parent().petitioner.length > 0; }
+        },
+        name: { 
+          type: String, 
+          trim: true,
+          required: function() { return this.parent().petitioner && this.parent().petitioner.length > 0; }
+        },
+        email: { type: String, trim: true, lowercase: true },
+        contact: { type: String, trim: true },
+        address: { type: String, trim: true }
+      }],
+      respondent: [{
+        _id: false,
+        role: { 
+          type: String, 
+          enum: ['Respondent', 'Accused', 'Defendant', 'Opponent'], 
+          required: function() { return this.parent().respondent && this.parent().respondent.length > 0; }
+        },
+        type: { 
+          type: String, 
+          enum: ['Individual', 'Corporation', 'Organization'], 
+          required: function() { return this.parent().respondent && this.parent().respondent.length > 0; }
+        },
+        name: { 
+          type: String, 
+          trim: true,
+          required: function() { return this.parent().respondent && this.parent().respondent.length > 0; }
+        },
+        email: { type: String, trim: true, lowercase: true },
+        contact: { type: String, trim: true },
+        address: { type: String, trim: true },
+        opposingCounsel: { type: String, trim: true }
+      }]
+      // No 'required: true' here, so the 'parties' object itself is optional
     },
+
     // Advocates Section (updated structure)
     advocates: [
       {
@@ -125,6 +155,17 @@ const CaseSchema = new mongoose.Schema(
         poc: { type: String },   // Point of contact
         isLead: { type: Boolean, default: false },
         level: { type: String, enum: ["Senior", "Junior"] }
+      }
+    ],
+
+    // Clients associated with the case (primarily added by a lawyer)
+    clients: [
+      {
+        _id: false, // No separate _id for subdocuments
+        name: { type: String, required: true, trim: true },
+        email: { type: String, trim: true, lowercase: true },
+        contact: { type: String, trim: true },
+        address: { type: String, trim: true }
       }
     ],
 
