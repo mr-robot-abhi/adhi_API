@@ -120,7 +120,7 @@ exports.getCase = async (req, res, next) => {
  * @route   POST /api/cases
  * @access  Private (Lawyers and Clients)
  */
-const { createCaseSchema } = require('../utils/validation');
+const { createCaseSchema, updateCaseSchema } = require('../utils/validation');
 
 exports.createCase = async (req, res, next) => {
   try {
@@ -128,7 +128,7 @@ exports.createCase = async (req, res, next) => {
     const { error } = createCaseSchema.validate(req.body);
     if (error) return next(new AppError(error.details[0].message, 400));
 
-    const { parties, advocates, clients, ...otherFields } = req.body;
+    const { parties, advocates, clients, stakeholders, ...otherFields } = req.body;
     const caseData = {
       ...otherFields,
       parties: {
@@ -138,6 +138,7 @@ exports.createCase = async (req, res, next) => {
       // Conditionally include advocates or clients based on what's provided
       ...(advocates && advocates.length > 0 && { advocates }),
       ...(clients && clients.length > 0 && { clients }),
+      ...(stakeholders && stakeholders.length > 0 && { stakeholders }),
       // Set the primary lawyer or client based on the user's role
       ...(req.user.role === 'lawyer' ? { lawyer: req.user.id } : { client: req.user.id })
     };
@@ -172,6 +173,10 @@ exports.createCase = async (req, res, next) => {
  */
 exports.updateCase = async (req, res, next) => {
   try {
+    // Validate request body against update schema
+    const { error: validationError } = updateCaseSchema.validate(req.body);
+    if (validationError) return next(new AppError(validationError.details[0].message, 400));
+
     const caseId = req.params.id
     const caseToUpdate = await Case.findById(caseId)
 
@@ -186,11 +191,14 @@ exports.updateCase = async (req, res, next) => {
       (req.user.role === 'lawyer' && !caseToUpdate.lawyer) || // Allow lawyer to assign themselves if not already assigned
       (req.user.role === 'client' && !caseToUpdate.client)  // Allow client to assign themselves if not already assigned
     ) {
-      // Prepare update data, ensuring we handle clients and advocates correctly
-      const { clients, advocates, ...otherUpdateData } = req.body;
+      // Prepare update data, ensuring we handle clients, advocates, and stakeholders correctly
+      const { clients, advocates, stakeholders, ...otherUpdateData } = req.body;
       const updatePayload = {
         ...otherUpdateData,
       };
+
+      // Handle stakeholders - can be updated by either role if they have case update access
+      if (stakeholders !== undefined) updatePayload.stakeholders = stakeholders; // Allows clearing or updating stakeholders
 
       if (req.user.role === 'lawyer') {
         // If lawyer is updating, they can update the 'clients' array.

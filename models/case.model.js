@@ -169,6 +169,18 @@ const CaseSchema = new mongoose.Schema(
       }
     ],
 
+    // Stakeholders associated with the case
+    stakeholders: [
+      {
+        _id: false, // No separate _id for subdocuments
+        name: { type: String, required: true, trim: true },
+        roleInCase: { type: String, trim: true }, // e.g., Witness, Expert, Beneficiary
+        email: { type: String, trim: true, lowercase: true },
+        contact: { type: String, trim: true },
+        address: { type: String, trim: true }
+      }
+    ],
+
     // Case Management
     priority: {
       type: String,
