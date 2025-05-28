@@ -88,35 +88,54 @@ const createCaseSchema = Joi.object({
   actSections: Joi.string().allow('', null).optional(),
   reliefSought: Joi.string().allow('', null).optional(),
   notes: Joi.string().allow('', null).optional(),
-  lawyer: Joi.string().hex().length(24).allow(null).optional(), // Assuming lawyer is an ObjectId string
-  client: Joi.string().hex().length(24).allow(null).optional(), // Assuming client is an ObjectId string
+  lawyer: Joi.string().hex().length(24).allow(null).optional(), // Primary lawyer reference
+  client: Joi.string().hex().length(24).allow(null).optional(), // Primary client reference
+  // Array of lawyers associated with the case
+  lawyers: Joi.array().items(
+    Joi.object({
+      user: Joi.string().hex().length(24).allow(null).optional(),
+      name: Joi.string().required(),
+      email: Joi.string().email().allow('').optional(),
+      contact: Joi.string().allow('').optional(),
+      company: Joi.string().allow('').optional(),
+      gst: Joi.string().allow('').optional(),
+      role: Joi.string().valid('lead', 'associate', 'junior', 'senior', 'counsel', 'other').default('associate'),
+      position: Joi.string().valid('first_chair', 'second_chair', 'supporting', 'other').default('supporting'),
+      isPrimary: Joi.boolean().default(false),
+      level: Joi.string().valid('Senior', 'Junior', 'Associate').allow('').optional(),
+      chairPosition: Joi.string().valid('first_chair', 'second_chair', 'supporting').default('supporting'),
+      addedBy: Joi.string().hex().length(24).optional(),
+      addedAt: Joi.date().default(() => new Date())
+    })
+  ).optional().default([]),
 
   parties: Joi.object({
     petitioner: Joi.array().items(
       Joi.object({
-        role: Joi.string().valid('Petitioner', 'Appellant', 'Plaintiff', 'Complainant').when('$isPetitionerPresent', { is: true, then: Joi.required() }),
-        type: Joi.string().valid('Individual', 'Corporation', 'Organization').when('$isPetitionerPresent', { is: true, then: Joi.required() }),
-        name: Joi.string().when('$isPetitionerPresent', { is: true, then: Joi.required() }),
+        role: Joi.string().valid('Petitioner', 'Appellant', 'Plaintiff', 'Complainant').required(),
+        type: Joi.string().valid('Individual', 'Corporation', 'Organization').required(),
+        name: Joi.string().required(),
         email: Joi.string().email().allow('', null).optional(),
         contact: Joi.string().allow('', null).optional(),
         address: Joi.string().allow('', null).optional()
       })
-    ).min(0).optional().when(Joi.object({ respondent: Joi.array().min(1) }).unknown(), { then: Joi.optional(), otherwise: Joi.optional() }), // petitioner array is optional
+    ).min(0).optional().default([]), // petitioner array is optional with default empty array
     respondent: Joi.array().items(
       Joi.object({
-        role: Joi.string().valid('Respondent', 'Accused', 'Defendant', 'Opponent').when('$isRespondentPresent', { is: true, then: Joi.required() }),
-        type: Joi.string().valid('Individual', 'Corporation', 'Organization').when('$isRespondentPresent', { is: true, then: Joi.required() }),
-        name: Joi.string().when('$isRespondentPresent', { is: true, then: Joi.required() }),
+        role: Joi.string().valid('Respondent', 'Accused', 'Defendant', 'Opponent').required(),
+        type: Joi.string().valid('Individual', 'Corporation', 'Organization').required(),
+        name: Joi.string().required(),
         email: Joi.string().email().allow('', null).optional(),
         contact: Joi.string().allow('', null).optional(),
         address: Joi.string().allow('', null).optional(),
         opposingCounsel: Joi.string().allow('', null).optional()
       })
-    ).min(0).optional() // respondent array is optional
+    ).min(0).optional().default([]) // respondent array is optional with default empty array
   }).optional().default({ petitioner: [], respondent: [] }), // parties object is optional, defaults to empty arrays
+  // Legacy advocates field - kept for backward compatibility
   advocates: Joi.array().items(
     Joi.object({
-      name: Joi.string().required(), // Name is required if an advocate object is provided
+      name: Joi.string().required(),
       email: Joi.string().email().allow('', null).optional(),
       contact: Joi.string().allow('', null).optional(),
       company: Joi.string().allow('', null).optional(),
@@ -124,9 +143,9 @@ const createCaseSchema = Joi.object({
       spock: Joi.string().allow('', null).optional(),
       poc: Joi.string().allow('', null).optional(),
       isLead: Joi.boolean().optional().default(false),
-      level: Joi.string().valid('Senior', 'Junior').allow(null).optional()
+      level: Joi.string().valid('Senior', 'Junior', 'Associate').allow('', null).optional()
     })
-  ).min(0).optional().default([]), // advocates array is optional, defaults to empty
+  ).default([]),
 
   clients: Joi.array().items(
     Joi.object({
@@ -138,7 +157,7 @@ const createCaseSchema = Joi.object({
       contact: Joi.string().allow('', null).optional(),
       address: Joi.string().allow('', null).optional()
     })
-  ).min(0).optional().default([]), // clients array is optional, defaults to empty
+  ).default([]), // clients array is optional, defaults to empty
 
   stakeholders: Joi.array().items(
     Joi.object({
@@ -151,7 +170,7 @@ const createCaseSchema = Joi.object({
       contact: Joi.string().allow('', null).optional(),
       address: Joi.string().allow('', null).optional()
     })
-  ).min(0).optional().default([]), // stakeholders array is optional, defaults to empty
+  ).default([]), // stakeholders array is optional, defaults to empty
 }).unknown(false);
 
 const updateCaseSchema = Joi.object({

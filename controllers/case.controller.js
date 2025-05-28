@@ -128,20 +128,60 @@ exports.createCase = async (req, res, next) => {
     const { error } = createCaseSchema.validate(req.body);
     if (error) return next(new AppError(error.details[0].message, 400));
 
-    const { parties, advocates, clients, stakeholders, ...otherFields } = req.body;
+    const { parties, advocates, clients, stakeholders, lawyers = [], ...otherFields } = req.body;
     const caseData = {
       ...otherFields,
+      creator: req.user.id,
       parties: {
-        petitioner: parties.petitioner,
-        respondent: parties.respondent
+        petitioner: parties?.petitioner || [],
+        respondent: parties?.respondent || []
       },
-      // Conditionally include advocates or clients based on what's provided
-      ...(advocates && advocates.length > 0 && { advocates }),
-      ...(clients && clients.length > 0 && { clients }),
-      ...(stakeholders && stakeholders.length > 0 && { stakeholders }),
-      // Set the primary lawyer or client based on the user's role
-      ...(req.user.role === 'lawyer' ? { lawyer: req.user.id } : { client: req.user.id })
+      // Initialize empty arrays for all relationship fields
+      advocates: [],
+      clients: [],
+      stakeholders: [],
+      lawyers: []
     };
+
+    // Handle lawyers - both primary and additional
+    const userLawyerData = {
+      user: req.user.id,
+      name: req.user.name,
+      email: req.user.email,
+      role: 'lead',
+      position: 'first_chair',
+      isPrimary: true,
+      level: 'Senior', // Default level
+      chairPosition: 'first_chair',
+      addedBy: req.user.id,
+      addedAt: new Date()
+    };
+
+    if (req.user.role === 'lawyer') {
+      // If user is a lawyer, they are the primary lawyer
+      caseData.lawyer = req.user.id;
+      // Add the primary lawyer to the lawyers array
+      caseData.lawyers = [userLawyerData, ...lawyers];
+      // Add any clients if provided
+      if (clients && clients.length > 0) {
+        caseData.clients = clients;
+      }
+    } else {
+      // If user is a client, they can add lawyers
+      caseData.client = req.user.id;
+      // Add any lawyers they've specified
+      if (lawyers && lawyers.length > 0) {
+        caseData.lawyers = lawyers;
+      }
+    }
+
+    // Add any advocates or stakeholders if provided
+    if (advocates && advocates.length > 0) {
+      caseData.advocates = advocates;
+    }
+    if (stakeholders && stakeholders.length > 0) {
+      caseData.stakeholders = stakeholders;
+    }
 
     // Prevent duplicate case numbers
     const existing = await Case.findOne({ caseNumber: caseData.caseNumber });
@@ -191,11 +231,40 @@ exports.updateCase = async (req, res, next) => {
       (req.user.role === 'lawyer' && !caseToUpdate.lawyer) || // Allow lawyer to assign themselves if not already assigned
       (req.user.role === 'client' && !caseToUpdate.client)  // Allow client to assign themselves if not already assigned
     ) {
-      // Prepare update data, ensuring we handle clients, advocates, and stakeholders correctly
-      const { clients, advocates, stakeholders, ...otherUpdateData } = req.body;
+      // Prepare update data, ensuring we handle clients, advocates, lawyers, and stakeholders correctly
+      const { clients, advocates, stakeholders, lawyers, ...otherUpdateData } = req.body;
       const updatePayload = {
         ...otherUpdateData,
       };
+
+      // Handle lawyers - allow updates by both lawyers and clients
+      if (lawyers !== undefined) {
+        let updatedLawyers = [...lawyers];
+        
+        // If user is a lawyer, ensure they remain in the lawyers list
+        if (req.user.role === 'lawyer') {
+          const userLawyerExists = updatedLawyers.some(l => 
+            l.user && l.user.toString() === req.user.id
+          );
+          
+          if (!userLawyerExists) {
+            updatedLawyers.unshift({
+              user: req.user.id,
+              name: req.user.name,
+              email: req.user.email,
+              role: 'lead',
+              position: 'first_chair',
+              isPrimary: true,
+              level: 'Senior',
+              chairPosition: 'first_chair',
+              addedBy: req.user.id,
+              addedAt: new Date()
+            });
+          }
+        }
+        
+        updatePayload.lawyers = updatedLawyers;
+      }
 
       // Handle stakeholders - can be updated by either role if they have case update access
       if (stakeholders !== undefined) updatePayload.stakeholders = stakeholders; // Allows clearing or updating stakeholders

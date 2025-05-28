@@ -211,6 +211,68 @@ const CaseSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    // Array of lawyers associated with the case
+    lawyers: [{
+      _id: false,
+      user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+      name: { 
+        type: String, 
+        required: [true, 'Lawyer name is required'] 
+      },
+      email: { 
+        type: String, 
+        trim: true, 
+        lowercase: true 
+      },
+      contact: { 
+        type: String, 
+        trim: true 
+      },
+      company: { 
+        type: String, 
+        trim: true 
+      },
+      gst: { 
+        type: String, 
+        trim: true 
+      },
+      role: { 
+        type: String, 
+        enum: ['lead', 'associate', 'junior', 'senior', 'counsel', 'other'],
+        default: 'associate'
+      },
+      position: { 
+        type: String, 
+        enum: ['first_chair', 'second_chair', 'supporting', 'other'],
+        default: 'supporting'
+      },
+      level: {
+        type: String,
+        enum: ['Senior', 'Junior', 'Associate', null],
+        default: null
+      },
+      chairPosition: {
+        type: String,
+        enum: ['first_chair', 'second_chair', 'supporting', null],
+        default: null
+      },
+      isPrimary: { 
+        type: Boolean, 
+        default: false 
+      },
+      addedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        required: true
+      },
+      addedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
     client: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

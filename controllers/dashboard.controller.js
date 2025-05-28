@@ -131,6 +131,10 @@ exports.getRecentCases = async (req, res, next) => {
         court: caseItem.court,
         date: `Updated ${getTimeAgo(caseItem.updatedAt)}`,
         urgent: caseItem.isUrgent,
+        status: caseItem.status,
+        lawyer: caseItem.lawyer ? { name: caseItem.lawyer.name, email: caseItem.lawyer.email } : null,
+        client: caseItem.client ? { name: caseItem.client.name, email: caseItem.client.email } : null,
+        hearingDate: caseItem.hearingDate ? formatDate(caseItem.hearingDate) : null,
         nextHearingDate: caseItem.nextHearingDate ? formatDate(caseItem.nextHearingDate) : null
       };
     });
