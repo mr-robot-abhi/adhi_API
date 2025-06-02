@@ -114,16 +114,21 @@ exports.getRecentCases = async (req, res, next) => {
     };
     console.log('Query for GET /api/dashboard/recent-cases:', JSON.stringify(caseOrFilter));
 
-    // Get recent cases
+    // Get recent cases with advocates
     const recentCases = await Case.find(caseOrFilter)
       .sort({ updatedAt: -1 })
       .limit(5)
       .populate('lawyer', 'name email')
-      .populate('client', 'name email');
+      .populate('client', 'name email')
+      .lean(); // Convert to plain JavaScript objects
+    
     console.log('Cases returned:', recentCases.map(c => c._id));
 
     // Format cases for frontend
     const formattedCases = recentCases.map(caseItem => {
+      // Get lead advocate or first advocate
+      const leadAdvocate = caseItem.advocates?.find(a => a.isLead) || caseItem.advocates?.[0];
+      
       return {
         id: caseItem._id,
         title: caseItem.title,
@@ -135,7 +140,16 @@ exports.getRecentCases = async (req, res, next) => {
         lawyer: caseItem.lawyer ? { name: caseItem.lawyer.name, email: caseItem.lawyer.email } : null,
         client: caseItem.client ? { name: caseItem.client.name, email: caseItem.client.email } : null,
         hearingDate: caseItem.hearingDate ? formatDate(caseItem.hearingDate) : null,
-        nextHearingDate: caseItem.nextHearingDate ? formatDate(caseItem.nextHearingDate) : null
+        nextHearingDate: caseItem.nextHearingDate ? formatDate(caseItem.nextHearingDate) : null,
+        // Include advocates array and lead advocate info
+        advocates: caseItem.advocates || [],
+        leadAdvocate: leadAdvocate ? {
+          name: leadAdvocate.name,
+          email: leadAdvocate.email,
+          contact: leadAdvocate.contact,
+          company: leadAdvocate.company,
+          isLead: leadAdvocate.isLead
+        } : null
       };
     });
 
