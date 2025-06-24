@@ -23,7 +23,7 @@ const schemas = {
   case: Joi.object({
     title: Joi.string().min(3).max(200).required(),
     description: Joi.string().min(10).max(1000).required(),
-    status: Joi.string().valid('draft', 'active', 'closed', 'archived')
+    status: Joi.string().valid('active', 'closed')
   }),
   document: Joi.object({
     name: Joi.string().min(3).max(200).required(),
@@ -65,7 +65,7 @@ const createCaseSchema = Joi.object({
     'any.only': 'Invalid case type',
     'any.required': 'Case type is required'
   }),
-  status: Joi.string().valid("draft", "active", "inactive", "closed", "archived", "pending").required().messages({
+  status: Joi.string().valid("active", "closed").required().messages({
     'any.only': 'Invalid status',
     'any.required': 'Status is required'
   }),
@@ -81,7 +81,10 @@ const createCaseSchema = Joi.object({
   courtComplex: Joi.string().allow('', null).optional(),
   filingDate: Joi.date().optional(),
   hearingDate: Joi.date().optional(),
-  nextHearingDate: Joi.date().allow(null).optional(),
+  nextHearingDate: Joi.date().required().messages({
+    'any.required': 'Next hearing date is required',
+    'date.base': 'Next hearing date must be a valid date'
+  }),
   priority: Joi.string().valid("low", "normal", "high", "urgent").allow('', null).optional(),
   isUrgent: Joi.boolean().optional(),
   caseStage: Joi.string().valid("filing", "pre_trial", "trial", "evidence", "arguments", "judgment", "execution", "appeal").allow('', null).optional(),
@@ -112,26 +115,26 @@ const createCaseSchema = Joi.object({
   parties: Joi.object({
     petitioner: Joi.array().items(
       Joi.object({
-        role: Joi.string().valid('Petitioner', 'Appellant', 'Plaintiff', 'Complainant').required(),
-        type: Joi.string().valid('Individual', 'Corporation', 'Organization').required(),
         name: Joi.string().required(),
+        type: Joi.string().valid('Individual', 'Corporation', 'Organization').default('Individual').optional(),
+        role: Joi.string().valid('Petitioner', 'Appellant', 'Plaintiff', 'Complainant').optional(),
         email: Joi.string().email().allow('', null).optional(),
         contact: Joi.string().allow('', null).optional(),
         address: Joi.string().allow('', null).optional()
       })
-    ).min(0).optional().default([]), // petitioner array is optional with default empty array
+    ).min(0).optional().default([]),
     respondent: Joi.array().items(
       Joi.object({
-        role: Joi.string().valid('Respondent', 'Accused', 'Defendant', 'Opponent').required(),
-        type: Joi.string().valid('Individual', 'Corporation', 'Organization').required(),
         name: Joi.string().required(),
+        type: Joi.string().valid('Individual', 'Corporation', 'Organization').default('Individual').optional(),
+        role: Joi.string().valid('Respondent', 'Accused', 'Defendant', 'Opponent').optional(),
         email: Joi.string().email().allow('', null).optional(),
         contact: Joi.string().allow('', null).optional(),
         address: Joi.string().allow('', null).optional(),
         opposingCounsel: Joi.string().allow('', null).optional()
       })
-    ).min(0).optional().default([]) // respondent array is optional with default empty array
-  }).optional().default({ petitioner: [], respondent: [] }), // parties object is optional, defaults to empty arrays
+    ).min(0).optional().default([])
+  }).optional().default({ petitioner: [], respondent: [] }),
   // Legacy advocates field - kept for backward compatibility
   advocates: Joi.array().items(
     Joi.object({
@@ -182,7 +185,7 @@ const updateCaseSchema = Joi.object({
   caseType: Joi.string().valid("civil", "criminal", "family", "commercial", "writ", "arbitration", "labour", "revenue", "motor_accident", "appeal", "revision", "execution", "other").optional().messages({
     'any.only': 'Invalid case type'
   }),
-  status: Joi.string().valid("draft", "active", "inactive", "closed", "archived", "pending").optional().messages({
+  status: Joi.string().valid("active", "closed").optional().messages({
     'any.only': 'Invalid status'
   }),
   description: Joi.string().allow('', null).optional(),
@@ -207,9 +210,9 @@ const updateCaseSchema = Joi.object({
   parties: Joi.object({
     petitioner: Joi.array().items(
       Joi.object({
+        name: Joi.string().required(),
+        type: Joi.string().valid('Individual', 'Corporation', 'Organization').default('Individual').optional(),
         role: Joi.string().valid('Petitioner', 'Appellant', 'Plaintiff', 'Complainant').optional(),
-        type: Joi.string().valid('Individual', 'Corporation', 'Organization').optional(),
-        name: Joi.string().optional(), // Name becomes optional if the object exists, but usually required if object is non-empty
         email: Joi.string().email().allow('', null).optional(),
         contact: Joi.string().allow('', null).optional(),
         address: Joi.string().allow('', null).optional()
@@ -217,9 +220,9 @@ const updateCaseSchema = Joi.object({
     ).min(0).optional(),
     respondent: Joi.array().items(
       Joi.object({
+        name: Joi.string().required(),
+        type: Joi.string().valid('Individual', 'Corporation', 'Organization').default('Individual').optional(),
         role: Joi.string().valid('Respondent', 'Accused', 'Defendant', 'Opponent').optional(),
-        type: Joi.string().valid('Individual', 'Corporation', 'Organization').optional(),
-        name: Joi.string().optional(),
         email: Joi.string().email().allow('', null).optional(),
         contact: Joi.string().allow('', null).optional(),
         address: Joi.string().allow('', null).optional(),

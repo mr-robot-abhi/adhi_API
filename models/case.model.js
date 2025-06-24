@@ -24,7 +24,7 @@ const CaseSchema = new mongoose.Schema(
       type: String,
       required: [true, "Status is required"],
       default: "active",
-      enum: ["draft", "active", "inactive", "closed", "archived", "pending"],
+      enum: ["active", "closed"],
       index: true,
     },
 
@@ -323,6 +323,96 @@ CaseSchema.pre("save", function (next) {
 CaseSchema.pre("save", function (next) {
   this.updatedAt = Date.now();
   next();
+});
+
+// Post-save hook to create hearing event when nextHearingDate is set
+CaseSchema.post("save", async function(doc) {
+  // Only create event if this is a new case and has nextHearingDate
+  if (doc.nextHearingDate && this.isNew) {
+    try {
+      const Event = mongoose.model('Event');
+      
+      // Create a hearing event for the next hearing date
+      const hearingEvent = new Event({
+        title: `Hearing - ${doc.title}`,
+        description: `Court hearing for case: ${doc.caseNumber}`,
+        start: doc.nextHearingDate,
+        end: new Date(doc.nextHearingDate.getTime() + 60 * 60 * 1000), // 1 hour duration
+        type: 'hearing',
+        case: doc._id,
+        caseTitle: doc.title,
+        caseNumber: doc.caseNumber,
+        location: doc.court || 'Court',
+        createdBy: doc.creator || doc.lawyer || doc.client,
+        status: 'scheduled',
+        priority: doc.isUrgent ? 'high' : 'medium'
+      });
+      
+      await hearingEvent.save();
+      
+      // Add the event to the case's events array
+      await mongoose.model('Case').updateOne(
+        { _id: doc._id },
+        { $push: { events: hearingEvent._id } }
+      );
+      
+    } catch (error) {
+      console.error('Error creating hearing event:', error);
+    }
+  }
+});
+
+// Post-update hook to handle nextHearingDate updates
+CaseSchema.post("findOneAndUpdate", async function(doc) {
+  if (doc && this._update && this._update.nextHearingDate) {
+    try {
+      const Event = mongoose.model('Event');
+      
+      // Check if there's already a hearing event for this case
+      const existingEvent = await Event.findOne({
+        case: doc._id,
+        type: 'hearing',
+        status: 'scheduled'
+      });
+      
+      if (existingEvent) {
+        // Update existing event
+        await Event.findByIdAndUpdate(existingEvent._id, {
+          start: this._update.nextHearingDate,
+          end: new Date(this._update.nextHearingDate.getTime() + 60 * 60 * 1000),
+          title: `Hearing - ${doc.title}`,
+          description: `Court hearing for case: ${doc.caseNumber}`
+        });
+      } else {
+        // Create new hearing event
+        const hearingEvent = new Event({
+          title: `Hearing - ${doc.title}`,
+          description: `Court hearing for case: ${doc.caseNumber}`,
+          start: this._update.nextHearingDate,
+          end: new Date(this._update.nextHearingDate.getTime() + 60 * 60 * 1000),
+          type: 'hearing',
+          case: doc._id,
+          caseTitle: doc.title,
+          caseNumber: doc.caseNumber,
+          location: doc.court || 'Court',
+          createdBy: doc.creator || doc.lawyer || doc.client,
+          status: 'scheduled',
+          priority: doc.isUrgent ? 'high' : 'medium'
+        });
+        
+        await hearingEvent.save();
+        
+        // Add the event to the case's events array
+        await mongoose.model('Case').updateOne(
+          { _id: doc._id },
+          { $push: { events: hearingEvent._id } }
+        );
+      }
+      
+    } catch (error) {
+      console.error('Error updating hearing event:', error);
+    }
+  }
 });
 
 // Indexes for better query performance

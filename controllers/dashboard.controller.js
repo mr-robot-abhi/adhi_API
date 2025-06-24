@@ -31,6 +31,12 @@ exports.getSummary = async (req, res, next) => {
       status: 'active'
     });
     
+    // Get closed cases
+    const closedCases = await Case.countDocuments({
+      ...caseOrFilter,
+      status: 'closed'
+    });
+    
     // Get urgent cases
     const urgentCases = await Case.countDocuments({
       ...caseOrFilter,
@@ -64,12 +70,36 @@ exports.getSummary = async (req, res, next) => {
       case: { $in: caseIds }
     });
     
-    // Calculate success rate (closed cases with successful outcome)
-    const closedCases = await Case.countDocuments({
-      ...caseOrFilter,
-      status: 'closed'
-    });
+    // Calculate active clients (unique clients with active cases)
+    let activeClients = 0;
+    if (req.user.role === 'lawyer') {
+      const activeCasesWithClients = await Case.find({
+        lawyer: req.user.id,
+        status: 'active'
+      }).populate('client', '_id');
+      
+      const uniqueClientIds = new Set(
+        activeCasesWithClients
+          .map(caseItem => caseItem.client?._id?.toString())
+          .filter(Boolean)
+      );
+      activeClients = uniqueClientIds.size;
+    } else {
+      // For clients, active clients would be the lawyers they work with
+      const activeCasesWithLawyers = await Case.find({
+        client: req.user.id,
+        status: 'active'
+      }).populate('lawyer', '_id');
+      
+      const uniqueLawyerIds = new Set(
+        activeCasesWithLawyers
+          .map(caseItem => caseItem.lawyer?._id?.toString())
+          .filter(Boolean)
+      );
+      activeClients = uniqueLawyerIds.size;
+    }
     
+    // Calculate success rate (closed cases with successful outcome)
     const successfulCases = await Case.countDocuments({
       ...caseOrFilter,
       status: 'closed',
@@ -85,10 +115,12 @@ exports.getSummary = async (req, res, next) => {
       data: {
         totalCases,
         activeCases,
+        closedCases,
         urgentCases,
         upcomingHearings,
         documents,
-        successRate
+        successRate,
+        activeClients
       }
     });
   } catch (error) {
@@ -176,32 +208,34 @@ exports.getUpcomingEvents = async (req, res, next) => {
       const clientCases = await Case.find({ client: req.user.id }).select('_id');
       caseIds = clientCases.map(c => c._id);
     }
-    
-    // Get upcoming events
-    const today = new Date();
-    const sevenDaysLater = new Date();
-    sevenDaysLater.setDate(today.getDate() + 7);
-    
+    // Use IST (Asia/Kolkata) for today (set to 22nd June 2024 for demo)
+    const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+    // Set 'today' to 22nd June 2024, 00:00 IST
+    const todayIST = new Date(Date.UTC(2024, 5, 22, 0, 0, 0)); // Month is 0-indexed
+    const sevenDaysLaterIST = new Date(todayIST.getTime() + 7 * 24 * 60 * 60 * 1000);
+    // Get all event types for the user's cases in the next 7 days
     const upcomingEvents = await Event.find({
       case: { $in: caseIds },
-      start: { $gte: today, $lte: sevenDaysLater },
+      start: { $gte: todayIST, $lte: sevenDaysLaterIST },
       status: { $ne: 'cancelled' }
     })
     .sort({ start: 1 })
-    .populate('case', 'title caseNumber')
-    .limit(5);
-    
-    // Format events for frontend
+      .populate('case', 'title caseNumber');
+    // Format events for frontend (date in IST)
     const formattedEvents = upcomingEvents.map(event => {
+      // Format date in IST
+      const istDate = new Date(event.start.getTime() + IST_OFFSET);
+      const day = istDate.toLocaleDateString('en-IN', { weekday: 'short', timeZone: 'Asia/Kolkata' });
+      const time = istDate.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
       return {
         id: event._id,
         title: event.title,
         case: event.case ? event.case.title : '',
         court: event.location,
-        date: formatEventDate(event.start)
+        type: event.type,
+        date: `${day}, ${time}`
       };
     });
-    
     res.status(200).json(formattedEvents);
   } catch (error) {
     logger.error(`Error getting upcoming events: ${error.message}`);

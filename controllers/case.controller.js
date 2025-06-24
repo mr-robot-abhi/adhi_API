@@ -16,34 +16,48 @@ exports.getCases = async (req, res, next) => {
     const filter = {}
 
     const userId = req.user.id;
-filter.$or = [
-  { creator: userId },
-  { lawyer: userId },
-  { client: userId }
-];
+    
+    // Base filter for user access - user can only see cases they're involved with
+    const userAccessFilter = {
+      $or: [
+        { creator: userId },
+        { lawyer: userId },
+        { client: userId }
+      ]
+    }
 
-if (search) {
-      filter.$or = [
+    // Additional filters
+    const additionalFilters = {}
+
+    if (search) {
+      additionalFilters.$or = [
         { title: { $regex: search, $options: "i" } },
         { caseNumber: { $regex: search, $options: "i" } },
         { court: { $regex: search, $options: "i" } },
       ]
     }
 
-    if (status) filter.status = status
-    if (type) filter.caseType = type
-    if (district) filter.district = district
+    if (status) additionalFilters.status = status
+    if (type) additionalFilters.caseType = type
+    if (district) additionalFilters.district = district
 
     if (date) {
       const today = new Date()
       const startOfToday = new Date(today.setHours(0, 0, 0, 0))
       if (date === "today") {
-        filter.filingDate = { $gte: startOfToday, $lt: new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000) }
+        additionalFilters.filingDate = { $gte: startOfToday, $lt: new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000) }
       } else if (date === "week") {
-        filter.filingDate = { $gte: new Date(startOfToday.getTime() - 7 * 24 * 60 * 60 * 1000) }
+        additionalFilters.filingDate = { $gte: new Date(startOfToday.getTime() - 7 * 24 * 60 * 60 * 1000) }
       } else if (date === "month") {
-        filter.filingDate = { $gte: new Date(startOfToday.getTime() - 30 * 24 * 60 * 60 * 1000) }
+        additionalFilters.filingDate = { $gte: new Date(startOfToday.getTime() - 30 * 24 * 60 * 60 * 1000) }
       }
+    }
+
+    // Combine user access filter with additional filters
+    if (Object.keys(additionalFilters).length > 0) {
+      filter.$and = [userAccessFilter, additionalFilters]
+    } else {
+      Object.assign(filter, userAccessFilter)
     }
 
     const page = Number.parseInt(req.query.page, 10) || 1
