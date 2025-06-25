@@ -241,6 +241,30 @@ exports.createCase = async (req, res, next) => {
  */
 exports.updateCase = async (req, res, next) => {
   try {
+    // Debug log incoming payload
+    console.log('Incoming update payload:', JSON.stringify(req.body, null, 2));
+    if (req.body.parties) {
+      if (!Array.isArray(req.body.parties.petitioner)) req.body.parties.petitioner = [];
+      if (!Array.isArray(req.body.parties.respondent)) req.body.parties.respondent = [];
+      // Patch missing fields for every party
+      req.body.parties.petitioner = req.body.parties.petitioner.map(p => ({
+        name: p.name || "",
+        type: p.type || "Individual",
+        role: p.role || "Petitioner",
+        email: p.email || "",
+        contact: p.contact || "",
+        address: p.address || ""
+      }));
+      req.body.parties.respondent = req.body.parties.respondent.map(p => ({
+        name: p.name || "",
+        type: p.type || "Individual",
+        role: p.role || "Respondent",
+        email: p.email || "",
+        contact: p.contact || "",
+        address: p.address || "",
+        opposingCounsel: p.opposingCounsel || ""
+      }));
+    }
     // Validate request body against update schema
     const { error: validationError } = updateCaseSchema.validate(req.body);
     if (validationError) return next(new AppError(validationError.details[0].message, 400));
@@ -327,18 +351,22 @@ exports.updateCase = async (req, res, next) => {
         updatePayload.stakeholders = Array.isArray(stakeholders) ? stakeholders : [];
       }
       
-      // Handle parties if provided
+      // Handle parties robustly
+      let newParties;
       if (parties) {
-        updatePayload.parties = {
+        newParties = {
           petitioner: Array.isArray(parties.petitioner) ? parties.petitioner : [],
           respondent: Array.isArray(parties.respondent) ? parties.respondent : []
         };
-      } else if (req.user.role === 'client') {
-        // If client is updating, they can update the 'advocates' array.
-        // 'clients' array should remain as is unless explicitly changed by a lawyer user.
-        if (advocates !== undefined) updatePayload.advocates = advocates; // Allow clearing or updating advocates
-        if (!caseToUpdate.client) updatePayload.client = req.user.id; // Assign client if not set
+      } else {
+        // Use existing case's parties, but ensure structure
+        const existingParties = caseToUpdate.parties || {};
+        newParties = {
+          petitioner: Array.isArray(existingParties.petitioner) ? existingParties.petitioner : [],
+          respondent: Array.isArray(existingParties.respondent) ? existingParties.respondent : []
+        };
       }
+      updatePayload.parties = newParties;
 
       const updatedCase = await Case.findByIdAndUpdate(caseId, updatePayload, {
         new: true,

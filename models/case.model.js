@@ -99,20 +99,19 @@ const CaseSchema = new mongoose.Schema(
     parties: {
       petitioner: [{
         _id: false, // No separate _id for subdocuments unless needed
-        role: { 
-          type: String, 
-          enum: ['Petitioner', 'Appellant', 'Plaintiff', 'Complainant'], 
-          required: function() { return this.parent().petitioner && this.parent().petitioner.length > 0; } // Required if petitioner array is not empty
-        },
-        type: { 
-          type: String, 
-          enum: ['Individual', 'Corporation', 'Organization'], 
-          required: function() { return this.parent().petitioner && this.parent().petitioner.length > 0; }
-        },
-        name: { 
-          type: String, 
+        name: {
+          type: String,
           trim: true,
-          required: function() { return this.parent().petitioner && this.parent().petitioner.length > 0; }
+          required: true
+        },
+        type: {
+          type: String,
+          enum: ['Individual', 'Corporation', 'Organization'],
+          default: 'Individual'
+        },
+        role: {
+          type: String,
+          enum: ['Petitioner', 'Appellant', 'Plaintiff', 'Complainant'],
         },
         email: { type: String, trim: true, lowercase: true },
         contact: { type: String, trim: true },
@@ -120,20 +119,19 @@ const CaseSchema = new mongoose.Schema(
       }],
       respondent: [{
         _id: false,
-        role: { 
-          type: String, 
-          enum: ['Respondent', 'Accused', 'Defendant', 'Opponent'], 
-          required: function() { return this.parent().respondent && this.parent().respondent.length > 0; }
-        },
-        type: { 
-          type: String, 
-          enum: ['Individual', 'Corporation', 'Organization'], 
-          required: function() { return this.parent().respondent && this.parent().respondent.length > 0; }
-        },
-        name: { 
-          type: String, 
+        name: {
+          type: String,
           trim: true,
-          required: function() { return this.parent().respondent && this.parent().respondent.length > 0; }
+          required: true
+        },
+        type: {
+          type: String,
+          enum: ['Individual', 'Corporation', 'Organization'],
+          default: 'Individual'
+        },
+        role: {
+          type: String,
+          enum: ['Respondent', 'Accused', 'Defendant', 'Opponent'],
         },
         email: { type: String, trim: true, lowercase: true },
         contact: { type: String, trim: true },
