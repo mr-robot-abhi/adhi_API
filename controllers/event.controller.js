@@ -15,19 +15,17 @@ exports.getEvents = async (req, res, next) => {
     // Build filter object
     const filter = {};
 
-    // Check user role and filter events accordingly
-    if (req.user.role === 'client') {
-      // Clients can only see events from their cases
-      const clientCases = await Case.find({ client: req.user.id }).select('_id');
-      const clientCaseIds = clientCases.map(c => c._id);
-      filter.case = { $in: clientCaseIds };
-    } else if (req.user.role === 'lawyer') {
-      // Lawyers can see events from cases where they are assigned
-      const lawyerCases = await Case.find({ lawyer: req.user.id }).select('_id');
-      const lawyerCaseIds = lawyerCases.map(c => c._id);
-      filter.case = { $in: lawyerCaseIds };
-    }
-
+    // --- TEMPORARY: Relax filtering for testing ---
+    // Comment out user/case filtering for now
+    // if (req.user.role === 'client') {
+    //   const clientCases = await Case.find({ client: req.user.id }).select('_id');
+    //   const clientCaseIds = clientCases.map(c => c._id);
+    //   filter.case = { $in: clientCaseIds };
+    // } else if (req.user.role === 'lawyer') {
+    //   const lawyerCases = await Case.find({ lawyer: req.user.id }).select('_id');
+    //   const lawyerCaseIds = lawyerCases.map(c => c._id);
+    //   filter.case = { $in: lawyerCaseIds };
+    // }
 
     // Apply additional filters if provided
     if (search) {
@@ -49,19 +47,20 @@ exports.getEvents = async (req, res, next) => {
     // Filter by date range
     if (startDate || endDate) {
       filter.start = {};
-      
       if (startDate) {
         filter.start.$gte = new Date(startDate);
       }
-      
       if (endDate) {
         filter.start.$lte = new Date(endDate);
       }
     }
 
+    // --- LOGGING: Print filter before querying ---
+    console.log('Event filter:', filter);
+
     // Query events with pagination
     const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
+    const limit = 1000; // For testing, show all events
     const skip = (page - 1) * limit;
 
     // Execute query with populated fields
@@ -71,6 +70,10 @@ exports.getEvents = async (req, res, next) => {
       .sort({ start: 1 })
       .skip(skip)
       .limit(limit);
+
+    // --- LOGGING: Print number of events returned and the events themselves ---
+    console.log('Events returned:', events.length);
+    console.log('Events array:', events);
 
     // Get total count for pagination
     const total = await Event.countDocuments(filter);

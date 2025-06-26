@@ -100,17 +100,17 @@ const CaseSchema = new mongoose.Schema(
       petitioner: [{
         _id: false, // No separate _id for subdocuments unless needed
         name: {
-          type: String,
+          type: String, 
           trim: true,
           required: true
         },
-        type: {
-          type: String,
-          enum: ['Individual', 'Corporation', 'Organization'],
+        type: { 
+          type: String, 
+          enum: ['Individual', 'Corporation', 'Organization'], 
           default: 'Individual'
         },
         role: {
-          type: String,
+          type: String, 
           enum: ['Petitioner', 'Appellant', 'Plaintiff', 'Complainant'],
         },
         email: { type: String, trim: true, lowercase: true },
@@ -120,17 +120,17 @@ const CaseSchema = new mongoose.Schema(
       respondent: [{
         _id: false,
         name: {
-          type: String,
+          type: String, 
           trim: true,
           required: true
         },
-        type: {
-          type: String,
-          enum: ['Individual', 'Corporation', 'Organization'],
+        type: { 
+          type: String, 
+          enum: ['Individual', 'Corporation', 'Organization'], 
           default: 'Individual'
         },
         role: {
-          type: String,
+          type: String, 
           enum: ['Respondent', 'Accused', 'Defendant', 'Opponent'],
         },
         email: { type: String, trim: true, lowercase: true },

@@ -12,11 +12,6 @@ const EventSchema = new mongoose.Schema({
     type: String,
     maxlength: [1000, 'Description cannot exceed 1000 characters']
   },
-  outcome: {
-    type: String,
-    maxlength: [1000, 'Outcome cannot exceed 1000 characters'],
-    default: ''
-  },
 
   // Event Timing
   start: {
