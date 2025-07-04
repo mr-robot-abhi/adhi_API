@@ -15,17 +15,28 @@ exports.getEvents = async (req, res, next) => {
     // Build filter object
     const filter = {};
 
-    // --- TEMPORARY: Relax filtering for testing ---
-    // Comment out user/case filtering for now
-    // if (req.user.role === 'client') {
-    //   const clientCases = await Case.find({ client: req.user.id }).select('_id');
-    //   const clientCaseIds = clientCases.map(c => c._id);
-    //   filter.case = { $in: clientCaseIds };
-    // } else if (req.user.role === 'lawyer') {
-    //   const lawyerCases = await Case.find({ lawyer: req.user.id }).select('_id');
-    //   const lawyerCaseIds = lawyerCases.map(c => c._id);
-    //   filter.case = { $in: lawyerCaseIds };
-    // }
+    // Find all case IDs where the user is involved (as lawyer or client, including arrays)
+    let userCaseIds = [];
+    if (req.user.role === 'client') {
+      const clientCases = await Case.find({
+        $or: [
+          { client: req.user.id },
+          { 'clients.user': req.user.id }
+        ]
+      }).select('_id');
+      userCaseIds = clientCases.map(c => c._id);
+    } else if (req.user.role === 'lawyer') {
+      const lawyerCases = await Case.find({
+        $or: [
+          { lawyer: req.user.id },
+          { 'lawyers.user': req.user.id }
+        ]
+      }).select('_id');
+      userCaseIds = lawyerCases.map(c => c._id);
+    }
+    if (userCaseIds.length > 0) {
+      filter.case = { $in: userCaseIds };
+    }
 
     // Apply additional filters if provided
     if (search) {

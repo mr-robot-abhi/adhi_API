@@ -165,16 +165,12 @@ exports.createCase = async (req, res, next) => {
     };
 
     // Handle user role specific data
+    // Remove forced assignment of logged-in user as primary lawyer or client
+    // Only set lawyer/client if not provided in request
     if (req.user.role === 'lawyer') {
-      // If user is a lawyer, they are the primary lawyer
-      caseData.lawyer = req.user.id;
-      
-      // Add the current user as primary lawyer if not already in lawyers array
-      const userLawyerExists = caseData.lawyers.some(lawyer => 
-        lawyer.user && lawyer.user.toString() === req.user.id
-      );
-      
-      if (!userLawyerExists) {
+      if (!caseData.lawyers || caseData.lawyers.length === 0) {
+        // If no lawyers provided, default to logged-in user
+        caseData.lawyer = req.user.id;
         caseData.lawyers = [
           {
             user: req.user.id,
@@ -187,27 +183,57 @@ exports.createCase = async (req, res, next) => {
             chairPosition: 'first_chair',
             addedBy: req.user.id,
             addedAt: new Date()
-          },
-          ...caseData.lawyers
+          }
         ];
       } else {
-        // Ensure the existing lawyer is marked as primary
-        caseData.lawyers = caseData.lawyers.map(lawyer => 
-          lawyer.user && lawyer.user.toString() === req.user.id 
-            ? { ...lawyer, isPrimary: true } 
-            : lawyer
-        );
+        // Use provided lawyers array, set primary if indicated
+        const primaryLawyer = caseData.lawyers.find(lawyer => lawyer.isPrimary);
+        if (primaryLawyer) {
+          caseData.lawyer = primaryLawyer.user;
+        } else {
+          // If no primary, set the first as primary
+          caseData.lawyers[0].isPrimary = true;
+          caseData.lawyer = caseData.lawyers[0].user;
+        }
       }
-    } else {
-      // If user is a client, set them as the client
-      caseData.client = req.user.id;
+    } else if (req.user.role === 'client') {
+      if (!caseData.clients || caseData.clients.length === 0) {
+        // If no clients provided, default to logged-in user
+        caseData.client = req.user.id;
+        caseData.clients = [
+          {
+            user: req.user.id,
+            name: req.user.name,
+            email: req.user.email,
+            isPrimary: true,
+            addedBy: req.user.id,
+            addedAt: new Date()
+          }
+        ];
+      } else {
+        // Use provided clients array, set primary if indicated
+        const primaryClient = caseData.clients.find(client => client.isPrimary);
+        if (primaryClient) {
+          caseData.client = primaryClient.user;
+        } else {
+          // If no primary, set the first as primary
+          caseData.clients[0].isPrimary = true;
+          caseData.client = caseData.clients[0].user;
+        }
+      }
     }
-    
     // Ensure at least one primary lawyer is set if there are lawyers
     if (caseData.lawyers && caseData.lawyers.length > 0) {
       const hasPrimary = caseData.lawyers.some(lawyer => lawyer.isPrimary);
       if (!hasPrimary) {
         caseData.lawyers[0].isPrimary = true;
+      }
+    }
+    // Ensure at least one primary client is set if there are clients
+    if (caseData.clients && caseData.clients.length > 0) {
+      const hasPrimary = caseData.clients.some(client => client.isPrimary);
+      if (!hasPrimary) {
+        caseData.clients[0].isPrimary = true;
       }
     }
 
@@ -219,6 +245,78 @@ exports.createCase = async (req, res, next) => {
 
     const newCase = await Case.create(caseData);
     logger.info(`New case created: ${newCase.title} (ID: ${newCase._id})`);
+
+    // Notify all lawyers and clients (except creator)
+    const Notification = require('../models/notification.model');
+    const notifiedUserIds = new Set();
+    const notifiedEmails = new Set();
+    const notifiedPhones = new Set();
+    // Lawyers
+    if (Array.isArray(newCase.lawyers)) {
+      for (const lawyer of newCase.lawyers) {
+        if (lawyer.user && lawyer.user.toString() !== req.user.id && !notifiedUserIds.has(lawyer.user.toString())) {
+          await Notification.create({
+            user: lawyer.user,
+            type: 'case',
+            message: `You were added to the case: ${newCase.title}`,
+            link: `/dashboard/cases/${newCase._id}`,
+            meta: { caseId: newCase._id }
+          });
+          notifiedUserIds.add(lawyer.user.toString());
+        }
+        if (lawyer.email) notifiedEmails.add(lawyer.email);
+        if (lawyer.contact) notifiedPhones.add(lawyer.contact);
+      }
+    }
+    // Clients
+    if (Array.isArray(newCase.clients)) {
+      for (const client of newCase.clients) {
+        if (client.user && client.user.toString() !== req.user.id && !notifiedUserIds.has(client.user.toString())) {
+          await Notification.create({
+            user: client.user,
+            type: 'case',
+            message: `You were added to the case: ${newCase.title}`,
+            link: `/dashboard/cases/${newCase._id}`,
+            meta: { caseId: newCase._id }
+          });
+          notifiedUserIds.add(client.user.toString());
+        }
+        if (client.email) notifiedEmails.add(client.email);
+        if (client.contact) notifiedPhones.add(client.contact);
+      }
+    }
+    // Parties (petitioner/respondent)
+    if (newCase.parties && Array.isArray(newCase.parties.petitioner)) {
+      for (const p of newCase.parties.petitioner) {
+        if (p.email) notifiedEmails.add(p.email);
+        if (p.contact) notifiedPhones.add(p.contact);
+      }
+    }
+    if (newCase.parties && Array.isArray(newCase.parties.respondent)) {
+      for (const r of newCase.parties.respondent) {
+        if (r.email) notifiedEmails.add(r.email);
+        if (r.contact) notifiedPhones.add(r.contact);
+      }
+    }
+    // Stakeholders
+    if (Array.isArray(newCase.stakeholders)) {
+      for (const s of newCase.stakeholders) {
+        if (s.email) notifiedEmails.add(s.email);
+        if (s.contact) notifiedPhones.add(s.contact);
+      }
+    }
+    // Advocates
+    if (Array.isArray(newCase.advocates)) {
+      for (const a of newCase.advocates) {
+        if (a.email) notifiedEmails.add(a.email);
+        if (a.contact) notifiedPhones.add(a.contact);
+      }
+    }
+    // Prepare to send email/SMS (stub)
+    const sendgridMailer = require('../utils/sendgridMailer');
+    const twilio = require('../utils/twilio');
+    await sendgridMailer.sendCaseNotification(Array.from(notifiedEmails), newCase.title, `/dashboard/cases/${newCase._id}`);
+    await twilio.sendCaseNotification(Array.from(notifiedPhones), newCase.title, `/dashboard/cases/${newCase._id}`);
 
     res.status(201).json({
       status: 'success',
@@ -292,58 +390,33 @@ exports.updateCase = async (req, res, next) => {
       // Handle lawyers - update lawyers array if provided
       if (lawyers !== undefined) {
         let updatedLawyers = Array.isArray(lawyers) ? [...lawyers] : [];
-        
-        // If user is a lawyer, ensure they remain in the lawyers list
-        if (req.user.role === 'lawyer') {
-          const userLawyerExists = updatedLawyers.some(lawyer => 
-            lawyer.user && lawyer.user.toString() === req.user.id
-          );
-          
-          if (!userLawyerExists) {
-            updatedLawyers = [
-              {
-                user: req.user.id,
-                name: req.user.name,
-                email: req.user.email,
-                role: 'lead',
-                position: 'first_chair',
-                isPrimary: true,
-                level: 'Senior',
-                chairPosition: 'first_chair',
-                addedBy: req.user.id,
-                addedAt: new Date()
-              },
-              ...updatedLawyers
-            ];
-          } else {
-            // Ensure the existing lawyer is marked as primary
-            updatedLawyers = updatedLawyers.map(lawyer => 
-              lawyer.user && lawyer.user.toString() === req.user.id 
-                ? { ...lawyer, isPrimary: true } 
-                : lawyer
-            );
-          }
-        }
-        
-        // Ensure at least one primary lawyer is set if there are lawyers
         if (updatedLawyers.length > 0) {
-          const hasPrimary = updatedLawyers.some(lawyer => lawyer.isPrimary);
-          if (!hasPrimary) {
+          // Set primary lawyer if indicated, else first
+          const primaryLawyer = updatedLawyers.find(lawyer => lawyer.isPrimary);
+          if (!primaryLawyer) {
             updatedLawyers[0].isPrimary = true;
           }
+          updatePayload.lawyer = (updatedLawyers.find(lawyer => lawyer.isPrimary) || updatedLawyers[0]).user;
         }
-        
         updatePayload.lawyers = updatedLawyers;
+      }
+      // Handle clients if provided
+      if (clients !== undefined) {
+        let updatedClients = Array.isArray(clients) ? [...clients] : [];
+        if (updatedClients.length > 0) {
+          // Set primary client if indicated, else first
+          const primaryClient = updatedClients.find(client => client.isPrimary);
+          if (!primaryClient) {
+            updatedClients[0].isPrimary = true;
+          }
+          updatePayload.client = (updatedClients.find(client => client.isPrimary) || updatedClients[0]).user;
+        }
+        updatePayload.clients = updatedClients;
       }
 
       // Handle advocates if provided
       if (advocates !== undefined) {
         updatePayload.advocates = Array.isArray(advocates) ? advocates : [];
-      }
-
-      // Handle clients if provided
-      if (clients !== undefined) {
-        updatePayload.clients = Array.isArray(clients) ? clients : [];
       }
 
       // Handle stakeholders if provided

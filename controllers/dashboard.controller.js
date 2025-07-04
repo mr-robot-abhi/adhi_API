@@ -51,10 +51,20 @@ exports.getSummary = async (req, res, next) => {
     // Get case IDs based on user role
     let caseIds = [];
     if (req.user.role === 'lawyer') {
-      const lawyerCases = await Case.find({ lawyer: req.user.id }).select('_id');
+      const lawyerCases = await Case.find({
+        $or: [
+          { lawyer: req.user.id },
+          { 'lawyers.user': req.user.id }
+        ]
+      }).select('_id');
       caseIds = lawyerCases.map(c => c._id);
     } else if (req.user.role === 'client') {
-      const clientCases = await Case.find({ client: req.user.id }).select('_id');
+      const clientCases = await Case.find({
+        $or: [
+          { client: req.user.id },
+          { 'clients.user': req.user.id }
+        ]
+      }).select('_id');
       caseIds = clientCases.map(c => c._id);
     }
     
@@ -202,28 +212,57 @@ exports.getUpcomingEvents = async (req, res, next) => {
     // Get case IDs based on user role
     let caseIds = [];
     if (req.user.role === 'lawyer') {
-      const lawyerCases = await Case.find({ lawyer: req.user.id }).select('_id');
+      const lawyerCases = await Case.find({
+        $or: [
+          { lawyer: req.user.id },
+          { 'lawyers.user': req.user.id }
+        ]
+      }).select('_id');
       caseIds = lawyerCases.map(c => c._id);
     } else if (req.user.role === 'client') {
-      const clientCases = await Case.find({ client: req.user.id }).select('_id');
+      const clientCases = await Case.find({
+        $or: [
+          { client: req.user.id },
+          { 'clients.user': req.user.id }
+        ]
+      }).select('_id');
       caseIds = clientCases.map(c => c._id);
     }
-    // Use IST (Asia/Kolkata) for today (set to 22nd June 2024 for demo)
-    const IST_OFFSET = 5.5 * 60 * 60 * 1000;
-    // Set 'today' to 22nd June 2024, 00:00 IST
-    const todayIST = new Date(Date.UTC(2024, 5, 22, 0, 0, 0)); // Month is 0-indexed
-    const sevenDaysLaterIST = new Date(todayIST.getTime() + 7 * 24 * 60 * 60 * 1000);
-    // Get all event types for the user's cases in the next 7 days
+    // Use current date/time for filtering
+    const now = new Date();
+    const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    // 1. Get all events for the user's cases (remove 7-day filter)
     const upcomingEvents = await Event.find({
       case: { $in: caseIds },
-      start: { $gte: todayIST, $lte: sevenDaysLaterIST },
       status: { $ne: 'cancelled' }
     })
     .sort({ start: 1 })
-      .populate('case', 'title caseNumber');
-    // Format events for frontend (date in IST)
+    .populate('case', 'title caseNumber');
+    // 2. Get all cases with a nextHearingDate (remove 7-day filter)
+    const casesWithUpcomingHearings = await Case.find({
+      _id: { $in: caseIds },
+      nextHearingDate: { $ne: null }
+    }).select('title caseNumber nextHearingDate');
+    // 3. Prepare a set of hearing event dates to avoid duplicates
+    const hearingEventDates = new Set(
+      upcomingEvents.filter(e => e.type === 'hearing').map(e => String(+e.start))
+    );
+    // 4. Add hearing dates from cases if not already present as an event
+    const hearingEventsFromCases = casesWithUpcomingHearings
+      .filter(c => !hearingEventDates.has(String(+c.nextHearingDate)))
+      .map(c => ({
+        id: `hearing-${c._id}`,
+        title: 'Hearing',
+        case: c.title,
+        caseId: c._id, // <-- add this line
+        court: '',
+        type: 'hearing',
+        start: c.nextHearingDate,
+        date: new Date(c.nextHearingDate.getTime() + 5.5 * 60 * 60 * 1000).toLocaleString('en-IN', { weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })
+      }));
+    // 5. Format all events for frontend (date in IST)
+    const IST_OFFSET = 5.5 * 60 * 60 * 1000;
     const formattedEvents = upcomingEvents.map(event => {
-      // Format date in IST
       const istDate = new Date(event.start.getTime() + IST_OFFSET);
       const day = istDate.toLocaleDateString('en-IN', { weekday: 'short', timeZone: 'Asia/Kolkata' });
       const time = istDate.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
@@ -231,12 +270,16 @@ exports.getUpcomingEvents = async (req, res, next) => {
         id: event._id,
         title: event.title,
         case: event.case ? event.case.title : '',
+        caseId: event.case ? event.case._id : '', // <-- add this line
         court: event.location,
         type: event.type,
+        start: event.start,
         date: `${day}, ${time}`
       };
     });
-    res.status(200).json(formattedEvents);
+    // 6. Merge and sort all events by start date
+    const allEvents = [...formattedEvents, ...hearingEventsFromCases].sort((a, b) => new Date(a.start) - new Date(b.start));
+    res.status(200).json(allEvents);
   } catch (error) {
     logger.error(`Error getting upcoming events: ${error.message}`);
     next(error);

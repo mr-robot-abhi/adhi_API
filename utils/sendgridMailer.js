@@ -43,4 +43,22 @@ async function sendEmail({ to, subject, text, html }) {
   }
 }
 
-module.exports = { sendEmail };
+async function sendCaseNotification(emails, caseTitle, caseLink) {
+  if (!emails || emails.length === 0) return;
+  // Placeholder: log the emails and message
+  console.log('SendGrid: Would send case notification to:', emails);
+  console.log('Case:', caseTitle, 'Link:', caseLink);
+  // Uncomment below to actually send
+  /*
+  const msg = {
+    to: emails,
+    from: 'no-reply@adhivakta.com',
+    subject: `You were added to the case: ${caseTitle}`,
+    text: `You have been added to the case: ${caseTitle}. View details: ${caseLink}`,
+    html: `<p>You have been added to the case: <b>${caseTitle}</b>.</p><p><a href="${caseLink}">View Case Details</a></p>`
+  };
+  await sgMail.sendMultiple(msg);
+  */
+}
+
+module.exports = { sendEmail, sendCaseNotification };
