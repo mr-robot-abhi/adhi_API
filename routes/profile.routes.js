@@ -15,5 +15,13 @@ router.put('/profile', profileController.updateProfile);
 // Change password
 router.post('/change-password', profileController.changePassword);
 
+// Update notification settings
+router.put('/notifications', profileController.updateNotifications);
+
+// Update security settings
+router.put('/security', profileController.updateSecurity);
+
+// Update appearance settings
+router.put('/appearance', profileController.updateAppearance);
 
 module.exports = router;

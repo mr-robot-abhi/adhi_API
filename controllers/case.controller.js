@@ -1,5 +1,6 @@
 const Case = require("../models/case.model")
 const Document = require("../models/document.model")
+const Event = require("../models/event.model")
 const AppError = require("../utils/appError")
 const logger = require("../utils/logger")
 const mongoose = require("mongoose")
@@ -149,10 +150,12 @@ exports.createCase = async (req, res, next) => {
 
     const { parties = {}, advocates = [], clients = [], stakeholders = [], lawyers = [], ...otherFields } = req.body;
     
+    // Debug log the incoming lawyers data
+    console.log('Incoming lawyers data:', JSON.stringify(lawyers, null, 2));
+    
     // Initialize case data with basic info
     const caseData = {
       ...otherFields,
-      creator: req.user.id,
       parties: {
         petitioner: Array.isArray(parties.petitioner) ? parties.petitioner : [],
         respondent: Array.isArray(parties.respondent) ? parties.respondent : []
@@ -165,15 +168,12 @@ exports.createCase = async (req, res, next) => {
     };
 
     // Handle user role specific data
-    // Remove forced assignment of logged-in user as primary lawyer or client
-    // Only set lawyer/client if not provided in request
     if (req.user.role === 'lawyer') {
+      // Always ensure at least one lawyer (the logged-in user)
       if (!caseData.lawyers || caseData.lawyers.length === 0) {
-        // If no lawyers provided, default to logged-in user
-        caseData.lawyer = req.user.id;
+        // If no lawyers provided, create with logged-in user as primary
         caseData.lawyers = [
           {
-            user: req.user.id,
             name: req.user.name,
             email: req.user.email,
             role: 'lead',
@@ -185,15 +185,34 @@ exports.createCase = async (req, res, next) => {
             addedAt: new Date()
           }
         ];
+        caseData.lawyer = req.user.id;
       } else {
-        // Use provided lawyers array, set primary if indicated
+        // Ensure all provided lawyers have required fields
+        caseData.lawyers = caseData.lawyers.map(lawyer => ({
+          name: lawyer.name || '',
+          email: lawyer.email || '',
+          contact: lawyer.contact || '',
+          company: lawyer.company || '',
+          gst: lawyer.gst || '',
+          role: lawyer.role || 'associate',
+          position: lawyer.position || 'supporting',
+          isPrimary: lawyer.isPrimary || false,
+          level: lawyer.level || 'Senior',
+          chairPosition: lawyer.chairPosition || 'supporting',
+          addedBy: lawyer.addedBy || req.user.id,
+          addedAt: lawyer.addedAt || new Date()
+        }));
+        
+        // Ensure at least one primary lawyer
+        const hasPrimary = caseData.lawyers.some(lawyer => lawyer.isPrimary);
+        if (!hasPrimary) {
+          caseData.lawyers[0].isPrimary = true;
+        }
+        
+        // Set the primary lawyer as the main lawyer reference
         const primaryLawyer = caseData.lawyers.find(lawyer => lawyer.isPrimary);
         if (primaryLawyer) {
-          caseData.lawyer = primaryLawyer.user;
-        } else {
-          // If no primary, set the first as primary
-          caseData.lawyers[0].isPrimary = true;
-          caseData.lawyer = caseData.lawyers[0].user;
+          caseData.lawyer = req.user.id; // Always set to logged-in user for now
         }
       }
     } else if (req.user.role === 'client') {
@@ -229,6 +248,9 @@ exports.createCase = async (req, res, next) => {
         caseData.lawyers[0].isPrimary = true;
       }
     }
+    
+    // Debug log the final case data
+    console.log('Final case data lawyers:', JSON.stringify(caseData.lawyers, null, 2));
     // Ensure at least one primary client is set if there are clients
     if (caseData.clients && caseData.clients.length > 0) {
       const hasPrimary = caseData.clients.some(client => client.isPrimary);
@@ -391,6 +413,13 @@ exports.updateCase = async (req, res, next) => {
       if (lawyers !== undefined) {
         let updatedLawyers = Array.isArray(lawyers) ? [...lawyers] : [];
         if (updatedLawyers.length > 0) {
+          // Ensure all lawyers have the required addedBy field
+          updatedLawyers = updatedLawyers.map(lawyer => ({
+            ...lawyer,
+            addedBy: lawyer.addedBy || req.user.id,
+            addedAt: lawyer.addedAt || new Date()
+          }));
+          
           // Set primary lawyer if indicated, else first
           const primaryLawyer = updatedLawyers.find(lawyer => lawyer.isPrimary);
           if (!primaryLawyer) {
@@ -473,22 +502,25 @@ exports.deleteCase = async (req, res, next) => {
       return next(new AppError("Case not found", 404))
     }
 
-    // Only allow deletion if user is owner (lawyer or client assigned to this case)
-    if (
-      (caseToDelete.lawyer && caseToDelete.lawyer.toString() === req.user.id) ||
-      (caseToDelete.client && caseToDelete.client.toString() === req.user.id)
-    ) {
-      await caseToDelete.deleteOne();
-      return res.status(200).json({ success: true, message: "Case deleted" });
-    } else {
-      return next(new AppError("Not authorized to delete this case", 403))
+    // Check if user is authorized to delete this case
+    // Only the primary lawyer or primary client can delete the case
+    const isPrimaryLawyer = caseToDelete.lawyer && caseToDelete.lawyer.toString() === req.user.id;
+    const isPrimaryClient = caseToDelete.client && caseToDelete.client.toString() === req.user.id;
+
+    if (!isPrimaryLawyer && !isPrimaryClient) {
+      return next(new AppError("Not authorized to delete this case. Only the primary lawyer or primary client can delete it.", 403))
     }
 
     // Delete associated documents
     await Document.deleteMany({ case: caseId })
 
+    // Delete associated events
+    await Event.deleteMany({ case: caseId })
+
+    // Delete the case
     await Case.findByIdAndDelete(caseId)
-    logger.info(`Case deleted: ${caseToDelete.title} (ID: ${caseId})`)
+    
+    logger.info(`Case deleted: ${caseToDelete.title} (ID: ${caseId}) by user: ${req.user.id}`)
 
     res.status(200).json({
       success: true,

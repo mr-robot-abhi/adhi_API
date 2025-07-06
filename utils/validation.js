@@ -81,9 +81,16 @@ const createCaseSchema = Joi.object({
   courtComplex: Joi.string().allow('', null).optional(),
   filingDate: Joi.date().optional(),
   hearingDate: Joi.date().optional(),
-  nextHearingDate: Joi.date().required().messages({
+  nextHearingDate: Joi.date().required().custom((value, helpers) => {
+    const { filingDate } = helpers.state.ancestors[0];
+    if (filingDate && value && new Date(value) <= new Date(filingDate)) {
+      return helpers.error('any.invalid');
+    }
+    return value;
+  }).messages({
     'any.required': 'Next hearing date is required',
-    'date.base': 'Next hearing date must be a valid date'
+    'date.base': 'Next hearing date must be a valid date',
+    'any.invalid': 'First hearing date must be after the filing date'
   }),
   priority: Joi.string().valid("low", "normal", "high", "urgent").allow('', null).optional(),
   isUrgent: Joi.boolean().optional(),
@@ -97,18 +104,20 @@ const createCaseSchema = Joi.object({
   lawyers: Joi.array().items(
     Joi.object({
       user: Joi.string().hex().length(24).allow(null).optional(),
-      name: Joi.string().required(),
-      email: Joi.string().email().allow('').optional(),
-      contact: Joi.string().allow('').optional(),
-      company: Joi.string().allow('').optional(),
-      gst: Joi.string().allow('').optional(),
+      name: Joi.string().required().messages({
+        'any.required': 'Lawyer name is required'
+      }),
+      email: Joi.string().email().allow('', null).optional(),
+      contact: Joi.string().allow('', null).optional(),
+      company: Joi.string().allow('', null).optional(),
+      gst: Joi.string().allow('', null).optional(),
       role: Joi.string().valid('lead', 'associate', 'junior', 'senior', 'counsel', 'other').default('associate'),
       position: Joi.string().valid('first_chair', 'second_chair', 'supporting', 'other').default('supporting'),
       isPrimary: Joi.boolean().default(false),
-      level: Joi.string().valid('Senior', 'Junior', 'Associate').allow('').optional(),
+      level: Joi.string().valid('Senior', 'Junior', 'Associate').allow('', null).optional(),
       chairPosition: Joi.string().valid('first_chair', 'second_chair', 'supporting').default('supporting'),
-      addedBy: Joi.string().hex().length(24).optional(),
-      addedAt: Joi.date().default(() => new Date())
+      addedBy: Joi.string().hex().length(24).optional(), // Made optional since backend will set it
+      addedAt: Joi.date().optional()
     })
   ).optional().default([]),
 
